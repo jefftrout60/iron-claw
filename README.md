@@ -2,7 +2,38 @@
 
 IronClaw Core is a factory for deploying hardened OpenClaw agent instances in Docker. Each agent is a full OpenClaw gateway with its own personality, skills, channels, secrets, and resource limits, sharing one locked-down image and a single operational toolchain.
 
-The system has been run on two hardware profiles: **Intel Mac** (e.g. 2019 MacBook Pro, 32GB) and **Raspberry Pi** (ARM64, Pi 4/5). The same Dockerfile is used; you build the image on the target platform so the binary and dependencies match the architecture. Resource limits are set per agent in `agent.conf` so each container uses only what the host can afford — on a Pi, agents are typically 2g RAM and 1.5 CPUs; on a Mac you can allocate more. The idea is to fit the workload to the hardware and avoid impacting the rest of the system.
+---
+
+## Getting Started
+
+**Prerequisites:** Docker, Docker Compose, and [jq](https://jqlang.github.io/jq/) (e.g. `brew install jq` on macOS, `apt install jq` on Debian/Ubuntu).
+
+```bash
+# 1. Clone and enter the repo
+git clone https://github.com/kosar/iron-claw.git ironclaw && cd ironclaw
+
+# 2. Build the image (tag must match what compose expects)
+docker build -t ironclaw:2.0 .
+
+# 3. Configure the sample agent (create .env from template)
+cp agents/template/.env.example agents/sample-agent/.env
+```
+
+Edit `agents/sample-agent/.env` and set at least:
+
+- **OPENCLAW_GATEWAY_TOKEN** — e.g. `openssl rand -hex 24`
+- **OPENCLAW_OWNER_DISPLAY_SECRET** — any secret value (required by OpenClaw)
+- **OPENAI_API_KEY** — your OpenAI API key (or use Ollama-only in config)
+
+```bash
+# 4. Start the sample agent
+./scripts/compose-up.sh sample-agent -d
+
+# 5. Verify (expect JSON from the gateway)
+./scripts/test-gateway-http.sh sample-agent
+```
+
+You should see a JSON response (e.g. `"content":"sample-agent is working."`). Next: create your own agent with `./scripts/create-agent.sh mybot`, or add Telegram/WhatsApp in `config/openclaw.json` and `.env`. See [Quick Start](#quick-start) and [CONTRIBUTING.md](CONTRIBUTING.md) for more.
 
 ---
 
@@ -54,7 +85,7 @@ Example: for agents with **HARDWARE_PROFILE=pi** (e.g. on a Raspberry Pi), `comp
 ```
 ┌─────────────────────────────────────────────────────┐
 │                    Your Agents                       │
-│   sample-agent  ·  mybot  ·  pibot-demo  ·  ...      │
+│   sample-agent  ·  mybot  ·  ...                     │
 │   Personality, skills, channels, memory              │
 ├─────────────────────────────────────────────────────┤
 │                  IronClaw Core                       │
@@ -86,9 +117,9 @@ This section explains how IronClaw achieves the separation we care about: **immu
 - **Gateway** = “run in the gateway’s environment.” When the gateway runs inside our container, that environment *is* the container. So exec runs there — same filesystem, same network, same env. No extra privilege, no Docker-in-Docker, no socket mount.
 - We **could** install Docker in the container or mount the host’s Docker socket so OpenClaw could spawn sandbox containers. That would mean the container (or the gateway) can create containers on the host, which is a much larger trust and operational burden. For our use case — controlled skills, allowlisted exec, single-tenant agents — the container is already the right boundary. Gateway exec is the right choice.
 
-**Per-agent behavior:** For **pibot** (and any agent that runs in an environment where Docker isn’t available inside the container), we set `agents.defaults.sandbox.mode: "off"` and `tools.exec.host: "gateway"`. For other agents (e.g. ironclaw-bot, stylista) on a Mac with Docker on the host, we keep `host: "sandbox"` so exec runs in a separate sandbox container when that’s available. `compose-up.sh` injects the right values per agent so config-runtime never drifts.
+**Per-agent behavior:** For any agent that runs where **Docker is not available inside the container** (e.g. Raspberry Pi, or when you do not want OpenClaw to spawn sandbox containers), set `EXEC_HOST=gateway` in that agent’s `agent.conf`. Then `compose-up.sh` injects `agents.defaults.sandbox.mode: "off"` and `tools.exec.host: "gateway"` so exec runs in the same container as the gateway. For other agents (e.g. on a Mac where sandbox might be used later), the script injects `host: "sandbox"`. The source of truth is `agent.conf`; the container never “remembers” the wrong value across restarts.
 
-**Why this is critical for pibot (and Pi-type agents):** Pibot runs on a Raspberry Pi and must reach **services on the host** — PiGlow, PiFace, IR blaster, camera, log bridge — that live **outside** the container. Exec runs inside the container and talks to those services via HTTP (e.g. `host.docker.internal`) or device passthrough. If exec were set to sandbox, OpenClaw would try to run commands in a Docker sandbox that we don't provide, and exec would be blocked; the agent could not drive hardware or call host bridges. Each agent type (e.g. pibot) therefore has a **specific expectation** that exec host is correct for its environment. We encode that in the repo: pibot-type agents set `EXEC_HOST=gateway` in their `agent.conf`. On every `compose-up`, the script reads that (or the agent name for pibot) and injects `tools.exec.host` and `agents.defaults.sandbox.mode` into config-runtime. The source of truth is the agent's configuration in the repository; we never rely on workspace or OpenClaw config for this, so the setup stays correct across restarts and the agent can always reach the host.
+**Why this matters for limited-hardware or “no Docker-in-container” agents:** On a Raspberry Pi (or any host where the agent container has no Docker inside it), the agent often needs to reach **services on the host** — e.g. PiGlow, PiFace, IR blaster, camera, log bridge — via HTTP (`host.docker.internal`) or device passthrough. Exec must run **in the gateway** so those scripts and tools actually run. If exec were set to sandbox, OpenClaw would try to run commands in a separate Docker container that we do not provide, and exec would be blocked. We encode the policy in the repo: such agents set `EXEC_HOST=gateway` in `agent.conf`. On every `compose-up`, the script injects the correct `tools.exec.host` and `agents.defaults.sandbox.mode`. Full Raspberry Pi setup (PiGlow, IR, RFID, camera, Telegram) is in [docs/RECREATING-PIBOT.md](docs/RECREATING-PIBOT.md) and [docs/RASPBERRY-PI-RUNBOOK.md](docs/RASPBERRY-PI-RUNBOOK.md).
 
 ### Workspace and file paths: one shared view
 
@@ -126,12 +157,13 @@ ironclaw/
     lib.sh                      # Agent resolution (source agent.conf, set AGENT_*)
     docker-compose.yml.tmpl     # Per-agent compose (envsubst)
     compose-up.sh <agent> [-d]  # Sync config, heal, generate compose, up
-    create-agent.sh <name> [email]
+    create-agent.sh <name> [--minimal] [email]
     list-agents.sh
     compose-up-all.sh
-    discover-ollama.sh         # LAN scan for Ollama (used by compose-up when HARDWARE_PROFILE=pi; SCAN_SUBNET for skills)
-    heal-sessions.sh            # Fix broken session state (e.g. reasoning replay)
-    prune-sessions.sh           # Trim large session files
+    backup-agent.sh <name>      # Timestamped backup of config-runtime + logs (see docs/BACKUP-RESTORE.md)
+    rollout-image.sh            # Rebuild image and compose-up all agents (see docs/UPGRADING.md)
+    discover-ollama.sh          # LAN scan for Ollama (used by compose-up when HARDWARE_PROFILE=pi)
+    heal-sessions.sh, prune-sessions.sh
     watch-logs.sh, check-logs.sh, check-failures.sh, analyze-logs.sh
     usage-summary.sh
     test-gateway-http.sh
@@ -139,6 +171,8 @@ ironclaw/
     template/                   # Full OpenClaw skeleton; new agents copy from here
     sample-agent/               # One runnable example (create more with create-agent.sh)
   docs/
+    BACKUP-RESTORE.md           # Backup and restore agent state
+    UPGRADING.md                # Upgrade image and roll out to all agents
 ```
 
 Each agent directory has: `agent.conf`, `.env` (gitignored), `config/`, `workspace/`, and at runtime `config-runtime/` (gitignored), `logs/` (gitignored), and a generated `docker-compose.yml` (gitignored).
@@ -178,7 +212,7 @@ This follows standard containment practice: assume the payload might be coerced 
 
 ## Agents: sample-agent and the template
 
-The repo ships a **sample-agent** (one runnable example) and a **template** from which you create more agents with `./scripts/create-agent.sh <name>`. The agent **name** (e.g. sample-agent, mybot, pibot-demo) is the directory under `agents/`; the **instance** is that agent running in a container, wired to your Telegram bot, email, WhatsApp, or HTTP. Configure channels and allowlists in each agent's `config/openclaw.json` and `.env`.
+The repo ships a **sample-agent** (one runnable example) and a **template** from which you create more agents with `./scripts/create-agent.sh <name>` (or `--minimal` for a lighter agent). The agent **name** (e.g. sample-agent, mybot) is the directory under `agents/`; the **instance** is that agent running in a container, wired to your Telegram bot, email, WhatsApp, or HTTP. Configure channels and allowlists in each agent's `config/openclaw.json` and `.env`.
 
 ### sample-agent
 
@@ -192,7 +226,7 @@ Default runnable example. Create more agents with `./scripts/create-agent.sh <na
 # Start the sample agent (after copying .env.example to .env and setting secrets)
 ./scripts/compose-up.sh sample-agent -d
 
-# Create a new agent (port auto-assigned)
+# Create a new agent (port auto-assigned); use --minimal for a lighter agent
 ./scripts/create-agent.sh mybot admin@example.com
 # Edit agents/mybot/.env (OPENCLAW_GATEWAY_TOKEN, OPENAI_API_KEY, etc.)
 # Edit agents/mybot/workspace/ (IDENTITY.md, SOUL.md, USER.md)
@@ -201,6 +235,9 @@ Default runnable example. Create more agents with `./scripts/create-agent.sh <na
 
 # List agents and status
 ./scripts/list-agents.sh
+
+# Backup agent state (config-runtime + logs); restore see docs/BACKUP-RESTORE.md
+./scripts/backup-agent.sh sample-agent
 
 # Full runtime reset (keeps config source, wipes config-runtime and repopulates)
 ./scripts/compose-up.sh sample-agent --fresh -d
