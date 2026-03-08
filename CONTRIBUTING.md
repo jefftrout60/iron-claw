@@ -23,7 +23,7 @@ Thanks for your interest. This doc gets you from clone to a running agent quickl
 
 5. **Configure the sample agent**
    ```bash
-   cp agents/sample-agent/.env.example agents/sample-agent/.env
+   cp agents/template/.env.example agents/sample-agent/.env
    ```
    Edit `agents/sample-agent/.env` and set at least:
    - `OPENCLAW_GATEWAY_TOKEN` — e.g. `openssl rand -hex 24`
@@ -46,8 +46,7 @@ Thanks for your interest. This doc gets you from clone to a running agent quickl
 8. **Create another agent (optional)**
    ```bash
    ./scripts/create-agent.sh mybot
-   cp agents/mybot/.env.example agents/mybot/.env
-   # edit .env and config, then:
+   # create-agent.sh already created agents/mybot/.env from the template; edit it and config, then:
    ./scripts/compose-up.sh mybot -d
    ```
    For a **minimal agent** (lighter: one model, no PiGlow/IR/RFID/camera/productwatcher, etc.):
@@ -78,6 +77,10 @@ To run an agent on a Raspberry Pi with PiGlow, PiFace, IR, RFID, or camera, crea
 | `rollout-image.sh` | Rebuild image and roll out to all agents; see [docs/UPGRADING.md](docs/UPGRADING.md) |
 | `doctor.sh` | Preflight check (Docker, jq, template, .env) |
 | `smoke-test.sh` | Create temp agent, start, test, teardown (optional CI) |
+
+## Design and architecture
+
+Config/exec/sandbox design, workspace path rules, and protected settings are documented in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). For full technical detail (sync phases, volume layout, tradeoffs) see [IronClaw-TheoryOfOperation.md](IronClaw-TheoryOfOperation.md) in the repo root.
 
 ## Pull requests
 

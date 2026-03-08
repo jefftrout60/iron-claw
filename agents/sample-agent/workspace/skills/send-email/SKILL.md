@@ -13,7 +13,7 @@ metadata:
 
 # Send Email — Gmail (plain, HTML, attachments)
 
-Send outbound email using the workspace script. Supports **plain text**, **HTML**, and **attachments**. Credentials come from the agent `.env`; `compose-up.sh` copies SMTP vars into `skills/send-email/.env` so the script works when run from sandbox exec (which may not inherit Docker env).
+Send outbound email using the workspace script. Supports **plain text**, **HTML**, and **attachments**. Credentials: set `SMTP_FROM_EMAIL` and `GMAIL_APP_PASSWORD` in the agent `.env` (they are passed into the container). The script also reads from `workspace/skills/send-email/.env` if present (e.g. if you create that file manually for exec contexts that don't inherit env).
 
 ## When to use
 
@@ -77,6 +77,6 @@ python3 /home/ai_sandbox/.openclaw/workspace/skills/send-email/scripts/send_emai
 
 ## If the agent says it cannot run the script
 
-1. **Exec host:** On pibot exec runs as **gateway** (no Docker in container). See AGENTS.md Rule 6. If exec is blocked, re-sync and restart: `./scripts/compose-up.sh pibot -d`.
-2. **Env in container:** Ensure `SMTP_FROM_EMAIL` and `GMAIL_APP_PASSWORD` are in `agents/pibot/.env`. Run `./scripts/compose-up.sh pibot -d` so they are copied into `workspace/skills/send-email/.env` for sandbox exec; restart after editing `.env`.
-3. **Exec allowlist:** `config/exec-approvals.json` includes `/usr/bin/python3` so the sandbox allows running `python3 .../send_email.py`. If you still see "blocked", run compose-up to sync config → config-runtime.
+1. **Exec host:** If the container has no Docker, set `EXEC_HOST=gateway` in `agent.conf` and run `./scripts/compose-up.sh <agent> -d` so exec runs in the container.
+2. **Env in container:** Ensure `SMTP_FROM_EMAIL` and `GMAIL_APP_PASSWORD` are in the agent `.env`; restart after editing. Optionally create `workspace/skills/send-email/.env` with those two vars if the exec context doesn't inherit Docker env.
+3. **Exec allowlist:** `config/exec-approvals.json` (or OpenClaw exec config) must allow running `python3` and the script path. Run compose-up to sync config → config-runtime after changes.

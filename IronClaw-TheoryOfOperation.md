@@ -87,12 +87,12 @@ Before every `docker compose up`, `scripts/compose-up.sh` runs with the agent na
 
 2. **Host AGENTS.md** — Prepend host `workspace/AGENTS.md` into `config-runtime/workspace/AGENTS.md` (with marker and separator). Because the container mounts host workspace at `.openclaw/workspace`, the container reads the host's `workspace/AGENTS.md`; the merged file in config-runtime is for consistency when config-runtime is used as the source (e.g. full copy). Skills and scripts are rsynced from host `workspace/skills/` and `workspace/scripts/` into `config-runtime/workspace/`; with the overlay, the container sees the host workspace directly, so the live view of skills and scripts is from the host.
 
-3. **Send-email credentials** — If `agents/{name}/.env` exists and `agents/{name}/workspace/skills/send-email/` exists, extract lines matching `SMTP_FROM_EMAIL` and `GMAIL_APP_PASSWORD` from `.env` and write them to `agents/{name}/workspace/skills/send-email/.env`. So the send-email script (which may run in an exec context that doesn't inherit Docker env) can read credentials from that file. This file is gitignored.
+3. **Send-email credentials** — The send-email skill reads `SMTP_FROM_EMAIL` and `GMAIL_APP_PASSWORD` from the environment first; if either is missing, it falls back to `workspace/skills/send-email/.env` if that file exists. You can create that file manually from the agent `.env`; it is gitignored. (compose-up does not write it.)
 
 **Inject phase (jq into config-runtime/openclaw.json):**
 
 - Set `gateway.port` to the agent's port (from `agent.conf`).
-- **For pibot:** Set `agents.defaults.sandbox.mode` to `"off"` and `tools.exec.host` to `"gateway"`. Set `tools.exec.security` to `"full"` and `tools.exec.ask` to `"off"`.
+- **For agents with EXEC_HOST=gateway in agent.conf:** Set `agents.defaults.sandbox.mode` to `"off"` and `tools.exec.host` to `"gateway"`. Set `tools.exec.security` to `"full"` and `tools.exec.ask` to `"off"`.
 - **For other agents:** Set `tools.exec.host` to `"sandbox"`, same security and ask.
 
 So every start re-applies policy. Even if someone or something edited config-runtime/openclaw.json, the next compose-up restores the intended exec host and sandbox mode.
@@ -124,8 +124,8 @@ So we constrain: for agents that run in **our** Docker container (e.g. pibot on 
 
 ### 4.3 Per-Agent Policy
 
-- **pibot** (and any agent we run in an environment where the container has no Docker): `agents.defaults.sandbox.mode: "off"`, `tools.exec.host: "gateway"`. Injected every run by compose-up.
-- **Other agents** (e.g. ironclaw-bot, stylista on a Mac where the host has Docker): we keep `tools.exec.host: "sandbox"` so that when OpenClaw runs on that host, it can use Docker for exec if the gateway is not in a container, or if in the future we run them in a way that exposes Docker. For our current layout, those agents also run inside our container, so they would hit the same "no Docker" limit; the script today only special-cases pibot by name. If we need other agents to run without Docker, we would extend the condition (e.g. by agent name or by a flag in agent.conf).
+- **Agents with EXEC_HOST=gateway in agent.conf** (e.g. Raspberry Pi or any host where the container has no Docker): compose-up injects `agents.defaults.sandbox.mode: "off"` and `tools.exec.host: "gateway"` every run.
+- **Other agents:** compose-up injects `tools.exec.host: "sandbox"`. In the current layout they also run inside our container, so they would hit the same "no Docker" limit unless Docker is exposed to the container. The source of truth is `agent.conf`; set `EXEC_HOST=gateway` for any agent that must run exec in the container.
 
 **Tradeoff:** Gateway exec means the command runs in the same process environment as the gateway. A malicious or buggy script could in theory affect the gateway (e.g. kill the process, exhaust memory). We accept this because (a) the container is already the boundary and is hardened, (b) we control the skills and the exec allowlist, and (c) we are not running arbitrary untrusted code. For multi-tenant or highly untrusted exec, we would need to revisit (e.g. dedicated exec runner or Docker-in-Docker with strict limits).
 
@@ -175,7 +175,7 @@ The following are load-bearing. Removing or changing them has caused production 
 
 - **gateway.bind: "lan"** — Required so the gateway listens on a non-loopback address inside the container. Otherwise Docker port mapping cannot deliver traffic; TCP connects but the server returns empty. Documented in CLAUDE.md.
 - **gateway.mode: "local"** — OpenClaw requires this to start the gateway.
-- **Exec host and sandbox (pibot)** — Must remain gateway + sandbox off for pibot so exec works without Docker. Enforced by compose-up.
+- **Exec host and sandbox** — For agents with EXEC_HOST=gateway in agent.conf, exec must run in the container (no Docker). Enforced by compose-up on every start.
 
 ---
 
@@ -183,9 +183,9 @@ The following are load-bearing. Removing or changing them has caused production 
 
 1. Operator edits only `config/`, `workspace/`, and `.env` on the host.
 2. Operator runs `./scripts/compose-up.sh {agent} -d`.
-3. compose-up syncs config → config-runtime (with exclusions), merges AGENTS.md, rsyncs skills/scripts into config-runtime/workspace, writes send-email `.env` into host workspace, injects port and exec/sandbox into config-runtime/openclaw.json, prunes/heals sessions, generates docker-compose.yml, runs docker compose up.
+3. compose-up syncs config → config-runtime (with exclusions), merges AGENTS.md, rsyncs skills/scripts into config-runtime/workspace, injects port and exec/sandbox into config-runtime/openclaw.json, prunes/heals sessions, generates docker-compose.yml, runs docker compose up.
 4. Container starts with config-runtime at .openclaw, host workspace at .openclaw/workspace, logs at /tmp/openclaw. Env from .env. Gateway process starts, reads openclaw.json (with our injected port and exec host).
-5. Incoming requests (e.g. Telegram) hit the gateway. Agent runs; tools (read, write, exec, etc.) run in the same container. Exec runs in the gateway process (for pibot). Files shared between write and exec are under workspace. Credentials from env or workspace skill .env.
+5. Incoming requests (e.g. Telegram) hit the gateway. Agent runs; tools (read, write, exec, etc.) run in the same container. Exec runs in the gateway process when EXEC_HOST=gateway. Files shared between write and exec are under workspace. Credentials from env or workspace skill .env (e.g. send-email).
 6. Container never writes to host config/. Next compose-up will resync from config/ and re-inject policy.
 
 ---
@@ -197,11 +197,11 @@ The following are load-bearing. Removing or changing them has caused production 
 | Config vs config-runtime split | Keep host config immutable; container can only affect runtime copy. Resync on every start. | Let container write to config: rejected (corruption risk). |
 | Container mounts config-runtime, not config | Container never sees or touches source. | Mount config read-only: would still allow container to write elsewhere; we want a single writable config tree we control. |
 | Workspace mounted separately and overlays .openclaw/workspace | Container sees host workspace directly; skills and credential files (e.g. send-email .env) are on host and visible. | Single mount of config-runtime including workspace: would require syncing workspace into config-runtime and would duplicate; overlay keeps one source (host workspace). |
-| Exec host=gateway for pibot | No Docker in container; sandbox would require Docker. Gateway exec runs in same container. | Docker-in-Docker or socket mount: rejected (trust and complexity). |
-| Sandbox mode off for pibot | Disables OpenClaw's sandbox runtime so exec does not try to spawn Docker. | Leave sandbox on: would cause "sandbox unavailable" / spawn docker ENOENT. |
+| Exec host=gateway (EXEC_HOST=gateway in agent.conf) | No Docker in container; sandbox would require Docker. Gateway exec runs in same container. | Docker-in-Docker or socket mount: rejected (trust and complexity). |
+| Sandbox mode off when EXEC_HOST=gateway | Disables OpenClaw's sandbox runtime so exec does not try to spawn Docker. | Leave sandbox on: would cause "sandbox unavailable" / spawn docker ENOENT. |
 | Inject exec host and sandbox on every compose-up | Policy lives in the script; config-runtime cannot drift. | Rely on config only: config could be edited or overwritten; we enforce on each run. |
 | Workspace-only path rule for cross-tool files | Guarantees write and exec see the same path; avoids /tmp and path-mismatch bugs. | Allow /tmp: caused "file not found" and "email not configured" in practice. |
-| Send-email .env in workspace | Script can read credentials when exec env doesn't inherit Docker env. Compose-up writes from agent .env. | Rely only on Docker env: failed when exec did not inherit; file fallback fixes it. |
+| Send-email .env in workspace (optional) | Script reads env first; can read from workspace/skills/send-email/.env if present (create manually). Fallback when exec doesn't inherit Docker env. | Rely only on Docker env: failed when exec did not inherit; file fallback fixes it. |
 | Port bound to 127.0.0.1 on host | Restricts who can reach the gateway; operator can change if needed. | Bind 0.0.0.0: would expose gateway to LAN without extra controls. |
 
 ---
@@ -218,5 +218,5 @@ The following are load-bearing. Removing or changing them has caused production 
 | `agents/{name}/config-runtime/openclaw.json` | Runtime config; we inject gateway.port, tools.exec.*, agents.defaults.sandbox.mode here. |
 | `agents/{name}/.env` | Secrets; env_file in compose. Gitignored. |
 | `agents/{name}/workspace/` | Host workspace; mounted at .openclaw/workspace. Skills, scripts, and e.g. send-email/.env live here. |
-| `CLAUDE.md` | Project rules and protected settings; exec/sandbox policy for pibot vs others. |
-| `README.md` | User-facing overview; "Separation, Boundaries, and Execution" section aligns with this document. |
+| `CLAUDE.md` | Project rules and protected settings; exec/sandbox policy (EXEC_HOST=gateway). |
+| `README.md` | User-facing overview; links to ARCHITECTURE.md and this document. |
