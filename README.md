@@ -1,21 +1,22 @@
 # IronClaw
 
-A factory for running hardened [OpenClaw](https://openclaw.ai) agent gateways in Docker. Each agent gets its own container, config, personality, skills, and channels while sharing one locked-down image and a single operational toolchain.
+Run one or many hardened [OpenClaw](https://openclaw.ai) agent gateways in Docker.
+Each agent has its own container, config, workspace, skills, channels, and secrets.
+The repo gives you one shared image plus scripts for setup, deploy, logs, and maintenance.
 
-**What is OpenClaw?** In the simplest terms: it’s the runtime that keeps your AI agent alive and working. You reach the agent through **channels**: connectors to the places people already chat: Telegram, WhatsApp, iMessage (e.g. via BlueBubbles), webhooks, or other messaging surfaces. That’s the important bit: one agent framework, one personality and set of skills, but users (or you) talk to it from the apps they already use. No custom UI to build, no “go log into our dashboard”. The agent is just there in the thread. OpenClaw receives messages from those channels, calls the model and runs tools or skills, and can do scheduled or background work, like a **daemon** that’s always on, or a **cron** that can run both on a schedule and in response to events. You give it config, a workspace, and optional skills; it handles the rest. IronClaw is the layer that runs one or many of these “agent processes” in isolated containers, the same way an OS runs many daemons or cron jobs.
+## Start here
 
-You can use IronClaw to build agents that grow with you: they keep their history and lessons learned (memory, logs, skill knowledge files), so over time they become more autonomous, more capable, and more tailored to your use case, without a big upfront design. Start from a solid base: OpenClaw’s built-in tools and a small set of optional skills (product discovery, style profiles, model switching, daily reports) that are ready to enable in config. Add your own skills under `workspace/skills/` when you need them, and as the agent runs it can extend itself with new skills and refinements. When you need to go further, the same stack can scale: you can enable **Lobster** (OpenClaw’s workflow engine), add subprocesses and self-driven workflows, and layer on more orchestration so one agent can run multi-step pipelines and approval-gated work without changing the box it runs in. You can start with a simple bot that answers questions and grow it into an assistant that remembers context, picks the right skill for the job, and takes on new capabilities or full workflows as your needs grow.
+If you are new, use this order:
 
-**Is this just ChatGPT?** No. ChatGPT is a chat product. Here you build a highly customized, highly autonomous agent: you choose the model, define its personality and skills, and decide where it runs. Chatting with it is one way to use it. It can also run on a schedule, react to webhooks, drive workflows, and use tools and memory without you in the loop. The agent is yours; conversation is just one of its interfaces.
-
-**How do the models work?** You talk to the agent via your channels; the agent calls LLM APIs under the hood. You can use the same models that power ChatGPT by adding an OpenAI API key and setting the agent’s model profile (e.g. GPT-4o, GPT-5-mini). That profile is per agent and fully configurable. In theory you can also run the whole stack on your own hardware: point the agent at Ollama or another local server, use no cloud APIs, and keep everything on your machine.
-
-**What we're doing.** We wanted to run multiple OpenClaw agents in isolation without hand-rolling config or security each time. So we wrapped the official gateway in a single image, one compose stack per agent, and scripts that keep host config as source of truth and sync into a runtime copy the container actually sees. No Docker inside the container, no writing back to your config. Once an agent is up, we don't get in the way: personalization and configuration happen as usual with OpenClaw (same config files, workspace, skills, channels). This is just the box it runs in. We dogfooded this on a Mac (several agents, cloud + local models) and on a Raspberry Pi (one agent, hardware like PiGlow and IR). Same repo, same design: you get a known-good setup whether you're on a laptop or a Pi, and the docs reflect what we actually run.
+1. Follow [Quick start](#quick-start).
+2. Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup and safety defaults.
+3. Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for runtime design.
+4. Use [docs/TOOLS-AND-SKILLS.md](docs/TOOLS-AND-SKILLS.md) and [docs/MODEL-CHOICE.md](docs/MODEL-CHOICE.md) when you are choosing capabilities and models.
 
 ## Prerequisites
 
 - **Docker** and **Docker Compose**
-- **[jq](https://jqlang.github.io/jq/)** — e.g. `apt install jq` (Debian/Ubuntu), `brew install jq` (macOS)
+- **[jq](https://jqlang.github.io/jq/)**: `apt install jq` (Debian/Ubuntu), `brew install jq` (macOS)
 
 ## Quick start
 
@@ -32,9 +33,9 @@ cp agents/template/.env.example agents/sample-agent/.env
 
 Edit `agents/sample-agent/.env` and set at least:
 
-- **OPENCLAW_GATEWAY_TOKEN** — e.g. `openssl rand -hex 24`
-- **OPENCLAW_OWNER_DISPLAY_SECRET** — any secret value (required by OpenClaw)
-- **OPENAI_API_KEY** — your OpenAI API key (or use Ollama-only in config)
+- **OPENCLAW_GATEWAY_TOKEN**: for example `openssl rand -hex 24`
+- **OPENCLAW_OWNER_DISPLAY_SECRET**: any secret value (required by OpenClaw)
+- **OPENAI_API_KEY**: your OpenAI API key (or use Ollama-only in config)
 
 ```bash
 # 4. Start the sample agent
@@ -48,12 +49,12 @@ You should see a JSON response. Next: create your own agent with `./scripts/crea
 
 ## What IronClaw adds
 
-- **Containerization** — One compose project per agent; each gets its own port, volumes, and resource limits.
-- **Security** — Read-only filesystem (only mounted volumes writable), capabilities dropped, non-root (UID 1000), no-new-privileges.
-- **Config discipline** — You edit `config/` and `workspace/` on the host. The container mounts a **runtime** copy; the next start resyncs from your source, so a bad run cannot corrupt the canonical config.
-- **Operational scripts** — Log analysis, cost tracking, failure detection, gateway health checks. All take the agent name as the first argument.
-- **Optional learning loop** — Post-run feedback (reliability, efficiency) can be logged and optionally emailed to the owner; internal only, never shown to end users.
-- **Factory model** — New agents are created with `./scripts/create-agent.sh <name>` from a single template; customization is additive.
+- **Containerization**: one compose project per agent, each with its own port, volumes, and resource limits.
+- **Security**: read-only filesystem (only mounted volumes writable), capabilities dropped, non-root (UID 1000), no-new-privileges.
+- **Config discipline**: edit `config/` and `workspace/` on the host. The container mounts a **runtime** copy, and each start resyncs from source so a bad run cannot corrupt canonical config.
+- **Operational scripts**: log analysis, cost tracking, failure detection, and gateway health checks. All take the agent name as the first argument.
+- **Optional learning loop**: post-run feedback (reliability, efficiency) can be logged and optionally emailed to the owner. This is internal only and never shown to end users.
+- **Factory model**: create new agents with `./scripts/create-agent.sh <name>` from one template, then customize as needed.
 
 OpenClaw is installed at **image build** time via the official installer. Upgrading the gateway means rebuilding the image and redeploying (see [docs/UPGRADING.md](docs/UPGRADING.md)).
 
@@ -121,7 +122,10 @@ Typical setup: a primary cloud model (e.g. OpenAI, Moonshot), an optional heartb
 
 ## Tools and skills
 
-Built-in tools: `exec`, `read`, `write`, `edit`, `web_fetch`, `browser`, `memory_search`, `sessions_list`, `cron`, `image`, `message`. Custom skills live under `workspace/skills/{name}/` (SKILL.md + scripts). The template and sample-agent include optional IronClaw built-ins ported from the reference codebase: **shopify-nexus** (Shopify MCP product/policy search, optional Chatsi Genius), **fashion-radar** (trend intelligence), **style-profile** (per-customer style memory), and **llm-manager** (runtime model tier switching). All four are disabled by default; enable in `config/openclaw.json` under `skills.entries`. See [docs/TOOLS-AND-SKILLS.md](docs/TOOLS-AND-SKILLS.md).
+Built-in tools include `exec`, `read`, `write`, `edit`, `web_fetch`, `browser`, `memory_search`, `sessions_list`, `cron`, `image`, and `message`.
+Custom skills live under `workspace/skills/{name}/` (`SKILL.md` + scripts).
+The template and sample-agent include four optional built-ins from the reference codebase: **shopify-nexus**, **fashion-radar**, **style-profile**, and **llm-manager**. They are disabled by default and can be enabled in `config/openclaw.json` under `skills.entries`.
+For setup and behavior details, use [docs/TOOLS-AND-SKILLS.md](docs/TOOLS-AND-SKILLS.md).
 
 ## Raspberry Pi and exec
 
@@ -133,14 +137,48 @@ On detached start, `learning-log-bridge.sh` runs unless `IRONCLAW_DISABLE_LEARNI
 
 ## Known issues
 
-- **Permission denied** — Containers run as UID 1000; ensure config-runtime, workspace, and logs are writable. On Pi with sudo, compose-up chowns config-runtime when `HARDWARE_PROFILE=pi`.
-- **Ollama unreachable** — Ensure Ollama listens on the expected interface (e.g. `0.0.0.0` for host.docker.internal).
-- **Gateway won’t start with bind: lan** — Add `"controlUi": { "dangerouslyAllowHostHeaderOriginFallback": true }` in the gateway section of `openclaw.json` (see [docs/RASPBERRY-PI-RUNBOOK.md](docs/RASPBERRY-PI-RUNBOOK.md)).
-- **Port conflict** — Each agent needs a unique port; `create-agent.sh` assigns the next free one.
+- **Permission denied**: containers run as UID 1000. Ensure config-runtime, workspace, and logs are writable. On Pi with sudo, compose-up chowns config-runtime when `HARDWARE_PROFILE=pi`.
+- **Ollama unreachable**: ensure Ollama listens on the expected interface (for example `0.0.0.0` for host.docker.internal).
+- **Gateway won’t start with bind: lan**: add `"controlUi": { "dangerouslyAllowHostHeaderOriginFallback": true }` in the gateway section of `openclaw.json` (see [docs/RASPBERRY-PI-RUNBOOK.md](docs/RASPBERRY-PI-RUNBOOK.md)).
+- **Port conflict**: each agent needs a unique port. `create-agent.sh` assigns the next free one.
 
 ## Advanced: autonomous behavior and optional features
 
 Out of the box, IronClaw does **not** enable the optional OpenClaw features that add heavy autonomous or multi-step behavior. The agent runs in a request-response style: it handles one conversation turn at a time. The only background behavior we configure is a lightweight **heartbeat** (e.g. every 2h) for memory maintenance. We do **not** enable **Lobster** (OpenClaw’s workflow engine for multi-step tool pipelines and approval-gated subprocesses), and we do **not** configure **nodes** or **canvas** (paired devices and display UI). So you don’t get workflow subprocesses, orchestrated pipelines, or device pairing by default; that keeps the system predictable and avoids surprising side effects when you first run an agent. If you need Lobster, richer subagent orchestration, or nodes/canvas, you can add them yourself in `config/openclaw.json` (e.g. `tools.alsoAllow`, subagent settings) and in OpenClaw’s docs; we leave that to you once your requirements call for it.
+
+## Background and concepts (optional)
+
+### What is OpenClaw?
+
+OpenClaw is the runtime that keeps your agent alive and working.
+You reach the agent through channels like Telegram, WhatsApp, iMessage (for example via BlueBubbles), webhooks, or other messaging surfaces.
+OpenClaw receives those messages, calls models, runs tools and skills, and can also run scheduled/background work.
+IronClaw is the deployment layer that runs one or many OpenClaw agents in isolated containers.
+
+### Is this just ChatGPT?
+
+No. ChatGPT is a chat product.
+Here you build and run your own agent with your own model choices, personality, skills, channels, and deployment target.
+Chat is one interface. The same agent can also run on schedules, react to webhooks, and use tools and memory without you in the loop.
+
+### How do models fit in?
+
+You talk to the agent through channels, and the agent calls LLM APIs under the hood.
+You can use OpenAI models by adding an API key and selecting a per-agent model profile (for example GPT-4o or GPT-5-mini).
+You can also run with local models by pointing the agent to Ollama or another local server.
+
+### Why this repo exists
+
+The goal is to run multiple OpenClaw agents in isolation without rebuilding security and ops from scratch each time.
+IronClaw wraps the official gateway in one image, one compose stack per agent, and scripts that keep host config as source of truth and sync into runtime copies.
+No Docker-in-Docker, and no writing back to canonical config.
+This setup is used on Mac and Raspberry Pi with the same repo layout and process.
+
+### How this can grow
+
+You can start with a basic bot and then add memory-heavy skills, channel integrations, and more automation over time.
+Optional skills like product discovery, style profiles, model switching, and reporting are ready to enable in config.
+If you need heavier orchestration later, you can add Lobster workflows and related OpenClaw features without changing the core IronClaw deployment model.
 
 ## Docs
 
