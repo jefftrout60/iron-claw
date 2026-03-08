@@ -49,6 +49,8 @@ You should see a JSON response. Next: create your own agent with `./scripts/crea
 
 OpenClaw is installed at **image build** time via the official installer. Upgrading the gateway means rebuilding the image and redeploying (see [docs/UPGRADING.md](docs/UPGRADING.md)).
 
+**A note on terminology.** We use OpenClaw’s terms here. An **agent** is one deployed instance: its config, personality (e.g. SOUL.md, AGENTS.md), and the channels and models you give it. **Tools** are the built-in capabilities OpenClaw provides (exec, read, write, web_fetch, browser, memory_search, and so on). **Skills** are custom capabilities you add under `workspace/skills/`: each has a SKILL.md (instructions for the model) and scripts the agent runs via the exec tool. So an agent uses tools and skills to do work; IronClaw is the layer that runs and hardens many such agents.
+
 ## Project layout
 
 ```
@@ -127,6 +129,10 @@ On detached start, `learning-log-bridge.sh` runs unless `IRONCLAW_DISABLE_LEARNI
 - **Ollama unreachable** — Ensure Ollama listens on the expected interface (e.g. `0.0.0.0` for host.docker.internal).
 - **Gateway won’t start with bind: lan** — Add `"controlUi": { "dangerouslyAllowHostHeaderOriginFallback": true }` in the gateway section of `openclaw.json` (see [docs/RASPBERRY-PI-RUNBOOK.md](docs/RASPBERRY-PI-RUNBOOK.md)).
 - **Port conflict** — Each agent needs a unique port; `create-agent.sh` assigns the next free one.
+
+## Advanced: autonomous behavior and optional features
+
+Out of the box, IronClaw does **not** enable the optional OpenClaw features that add heavy autonomous or multi-step behavior. The agent runs in a request-response style: it handles one conversation turn at a time. The only background behavior we configure is a lightweight **heartbeat** (e.g. every 2h) for memory maintenance. We do **not** enable **Lobster** (OpenClaw’s workflow engine for multi-step tool pipelines and approval-gated subprocesses), and we do **not** configure **nodes** or **canvas** (paired devices and display UI). So you don’t get workflow subprocesses, orchestrated pipelines, or device pairing by default; that keeps the system predictable and avoids surprising side effects when you first run an agent. If you need Lobster, richer subagent orchestration, or nodes/canvas, you can add them yourself in `config/openclaw.json` (e.g. `tools.alsoAllow`, subagent settings) and in OpenClaw’s docs; we leave that to you once your requirements call for it.
 
 ## Docs
 
