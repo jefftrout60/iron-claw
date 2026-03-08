@@ -60,6 +60,16 @@ OpenClaw is installed at **image build** time via the official installer. Upgrad
 
 **A note on terminology.** We use OpenClaw’s terms here. An **agent** is one deployed instance: its config, personality (e.g. SOUL.md, AGENTS.md), and the channels and models you give it. **Tools** are the built-in capabilities OpenClaw provides (exec, read, write, web_fetch, browser, memory_search, and so on). **Skills** are custom capabilities you add under `workspace/skills/`: each has a SKILL.md (instructions for the model) and scripts the agent runs via the exec tool. So an agent uses tools and skills to do work; IronClaw is the layer that runs and hardens many such agents.
 
+## Raspberry Pi: one-command setup
+
+On **Raspberry Pi OS 64-bit** (Pi 4 or 5), you can set up IronClaw from a fresh install with a single command. The script updates the system, installs Docker and jq, clones this repo, builds the image, configures the sample-agent, starts the gateway, and enables start-on-boot. It explains each step as it runs.
+
+```bash
+curl -sSL https://raw.githubusercontent.com/kosar/iron-claw/main/scripts/setup-raspberry-pi.sh | bash
+```
+
+Options: `bash -s -- --yes` (non-interactive), `--help`, `--dry-run`. See the script header for details. After it finishes, set real secrets in `~/ironclaw/agents/sample-agent/.env`, then log out and back in (so the `docker` group applies) and optionally reboot to verify start-on-boot.
+
 ## Project layout
 
 ```
