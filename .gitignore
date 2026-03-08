@@ -113,3 +113,4 @@ agents/*/workspace/skills/image-vision/ollama-last.json
 
 # Audio recordings (runtime artifacts, do not commit)
 agents/*/workspace/audio/*.wav
+agents/sample-agent/workspace/skills/*/ollama-hosts.json

@@ -135,8 +135,15 @@ fi
 # with gpt-5-mini reasoning items).
 "$IRONCLAW_ROOT/scripts/heal-sessions.sh" "$AGENT_NAME" --aggressive --startup
 
+# Ollama on home LAN is first-class: discover running servers and use one for the gateway unless overridden.
+# Load explicit override from agent .env if set.
+if [[ -f "$AGENT_ENV" ]]; then
+  _env_ollama=$(grep -E '^OLLAMA_HOST=' "$AGENT_ENV" 2>/dev/null | cut -d= -f2- | tr -d '"'\''\r' | xargs)
+  [[ -n "$_env_ollama" ]] && OLLAMA_HOST="$_env_ollama"
+fi
+
 # Generate docker-compose.yml from template via envsubst
-# Detect host LAN subnet to pass to container for Ollama discovery
+# Detect host LAN subnet to pass to container
 HOST_IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}' || true)
 SCAN_SUBNET="${HOST_IP%.*}.0/24"
 if [[ -z "$HOST_IP" || "$SCAN_SUBNET" == ".0/24" ]]; then
@@ -144,17 +151,42 @@ if [[ -z "$HOST_IP" || "$SCAN_SUBNET" == ".0/24" ]]; then
   exit 1
 fi
 
-# For Pi-style agents: dynamically detect Ollama on the network (discover-ollama.sh)
-if [[ "${HARDWARE_PROFILE:-}" == "pi" ]]; then
+# When OLLAMA_HOST is not set: probe LAN for Ollama servers (discover-ollama.sh), pick a valid host, use it for gateway and env.
+# Works the same whether compose-up runs on Pi, Mac, or Linux; Ollama may be on any machine on the LAN.
+if [[ -z "$OLLAMA_HOST" ]]; then
   OLLAMA_TMP=$(mktemp)
   if bash "$IRONCLAW_ROOT/scripts/discover-ollama.sh" "$OLLAMA_TMP" 2>/dev/null && [[ -s "$OLLAMA_TMP" ]]; then
+    # Prefer a LAN host (not localhost / host.docker.internal) so the container reaches the real Ollama server
     OLLAMA_HOST=$(jq -r '[.hosts[]? | select(.host != "127.0.0.1" and .host != "host.docker.internal") | .host] | .[0] // empty' "$OLLAMA_TMP" 2>/dev/null)
     [[ -z "$OLLAMA_HOST" ]] && OLLAMA_HOST=$(jq -r '.hosts[0].host // empty' "$OLLAMA_TMP" 2>/dev/null)
-    [[ -n "$OLLAMA_HOST" ]] && echo "[$AGENT_NAME] Ollama detected at $OLLAMA_HOST" >&2
+    if [[ -n "$OLLAMA_HOST" ]]; then
+      echo "[$AGENT_NAME] Ollama detected on LAN at $OLLAMA_HOST (will use for gateway)" >&2
+      # Write catalog into workspace so image-gen / image-vision skills see the same hosts without re-scanning
+      for catalog_dir in "$AGENT_WORKSPACE/skills/image-gen" "$AGENT_WORKSPACE/skills/image-vision"; do
+        if [[ -d "$catalog_dir" ]]; then
+          cp "$OLLAMA_TMP" "$catalog_dir/ollama-hosts.json" 2>/dev/null || true
+        fi
+      done
+    fi
   fi
   rm -f "$OLLAMA_TMP"
 fi
 export OLLAMA_HOST="${OLLAMA_HOST:-host.docker.internal}"
+
+# Gateway reads Ollama URL from config, not from env — patch config-runtime so the chosen host is used
+if command -v jq >/dev/null 2>&1 && [[ -f "$CONFIG_RUNTIME/openclaw.json" ]]; then
+  _ollama_base="http://${OLLAMA_HOST}:11434/v1"
+  if [[ "$OLLAMA_HOST" == *:* ]]; then
+    _ollama_base="http://${OLLAMA_HOST}/v1"
+  fi
+  tmp_json=$(mktemp)
+  if jq --arg url "$_ollama_base" '.models.providers.ollama.baseUrl = $url' "$CONFIG_RUNTIME/openclaw.json" > "$tmp_json" 2>/dev/null; then
+    mv "$tmp_json" "$CONFIG_RUNTIME/openclaw.json"
+    echo "[$AGENT_NAME] Ollama baseUrl set to $_ollama_base (gateway will use this)" >&2
+  else
+    rm -f "$tmp_json"
+  fi
+fi
 # Pi-style agents: inject host IP for PiGlow so container can reach host service (host.docker.internal can fail on some Pi/Docker)
 if [[ "${HARDWARE_PROFILE:-}" == "pi" ]] && [[ -n "$HOST_IP" ]]; then
   export PIGLOW_HOST="$HOST_IP"
