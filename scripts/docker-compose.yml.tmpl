@@ -1,6 +1,7 @@
 services:
   openclaw:
     image: ironclaw:2.0
+    pull_policy: never
     container_name: ${AGENT_CONTAINER}
     restart: unless-stopped
     mem_limit: ${AGENT_MEM_LIMIT}

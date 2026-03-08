@@ -72,56 +72,96 @@
           }
         ]
       },
-      "openai": {
-        "baseUrl": "https://api.openai.com/v1",
-        "apiKey": "${OPENAI_API_KEY}",
+      "groq": {
+        "baseUrl": "https://api.groq.com/openai/v1",
+        "api": "openai-completions",
+        "apiKey": "${GROQ_API_KEY}",
         "models": [
           {
-            "id": "gpt-5-mini",
-            "name": "Default (GPT-5 family)",
-            "reasoning": true,
+            "id": "meta-llama/llama-4-scout-17b-16e-instruct",
+            "name": "Llama 4 Scout 17B (Groq)",
+            "reasoning": false,
             "input": [
               "text"
             ],
             "cost": {
-              "input": 0.25,
-              "output": 2.0,
-              "cacheRead": 0.025,
-              "cacheWrite": 0.25
+              "input": 0.11,
+              "output": 0.34,
+              "cacheRead": 0,
+              "cacheWrite": 0
             },
-            "contextWindow": 400000,
-            "maxTokens": 128000
+            "contextWindow": 131072,
+            "maxTokens": 8192
           },
           {
-            "id": "gpt-5-nano",
-            "name": "Nano (heartbeat/lightweight)",
+            "id": "llama-3.3-70b-versatile",
+            "name": "Llama 3.3 70B (Groq fallback)",
+            "reasoning": false,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0.59,
+              "output": 0.79,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 128000,
+            "maxTokens": 32768
+          },
+          {
+            "id": "llama-3.1-8b-instant",
+            "name": "Llama 3.1 8B Instant (Groq heartbeat)",
             "reasoning": false,
             "input": [
               "text"
             ],
             "cost": {
               "input": 0.05,
-              "output": 0.4,
-              "cacheRead": 0.005,
-              "cacheWrite": 0.05
+              "output": 0.08,
+              "cacheRead": 0,
+              "cacheWrite": 0
             },
-            "contextWindow": 400000,
-            "maxTokens": 128000
-          },
+            "contextWindow": 128000,
+            "maxTokens": 8192
+          }
+        ]
+      },
+      "perplexity": {
+        "baseUrl": "https://api.perplexity.ai",
+        "api": "openai-completions",
+        "apiKey": "${PERPLEXITY_API_KEY}",
+        "models": [
           {
-            "id": "gpt-4o",
-            "name": "Cloud Fallback",
+            "id": "sonar-pro",
+            "name": "Perplexity Sonar Pro",
             "reasoning": false,
             "input": [
               "text"
             ],
             "cost": {
-              "input": 2.5,
-              "output": 10,
-              "cacheRead": 1.25,
-              "cacheWrite": 2.5
+              "input": 3.0,
+              "output": 15.0,
+              "cacheRead": 0,
+              "cacheWrite": 0
             },
-            "contextWindow": 200000,
+            "contextWindow": 127072,
+            "maxTokens": 8192
+          },
+          {
+            "id": "sonar",
+            "name": "Perplexity Sonar",
+            "reasoning": false,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 1.0,
+              "output": 1.0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 127072,
             "maxTokens": 8192
           }
         ]
@@ -131,10 +171,11 @@
   "agents": {
     "defaults": {
       "model": {
-        "primary": "openai/gpt-5-mini",
+        "primary": "groq/meta-llama/llama-4-scout-17b-16e-instruct",
         "fallbacks": [
-          "ollama/llama3.2:latest",
-          "ollama/qwen3:8b"
+          "perplexity/sonar-pro",
+          "ollama/qwen3:8b",
+          "ollama/qwen3:14b"
         ]
       },
       "timeoutSeconds": 600,
@@ -144,7 +185,7 @@
       },
       "heartbeat": {
         "every": "2h",
-        "model": "openai/gpt-5-nano"
+        "model": "groq/llama-3.1-8b-instant"
       }
     }
   },
@@ -182,22 +223,22 @@
   },
   "channels": {
     "telegram": {
-      "enabled": false,
+      "enabled": true,
       "dmPolicy": "allowlist",
-      "allowFrom": ["0"],
+      "allowFrom": ["8333403651"],
       "groupPolicy": "allowlist",
-      "groupAllowFrom": ["0"],
+      "groupAllowFrom": [],
       "groups": {
         "*": { "requireMention": true }
       },
       "streaming": "partial",
-      "botToken": "not-configured"
+      "botToken": "${TELEGRAM_BOT_TOKEN}"
     }
   },
   "plugins": {
     "entries": {
       "telegram": {
-        "enabled": false
+        "enabled": true
       }
     }
   },
@@ -216,9 +257,11 @@
     }
   },
   "tools": {
+    "exec": {},
     "web": {
       "search": {
-        "enabled": false
+        "enabled": true,
+        "provider": "perplexity"
       },
       "fetch": {
         "enabled": true,

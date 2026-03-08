@@ -6,15 +6,22 @@
       "apiKey": "ollama",
       "api_key": "ollama"
     },
-    "openai:default": {
-      "provider": "openai",
+    "groq:default": {
+      "provider": "groq",
       "mode": "api_key",
-      "apiKey": "${OPENAI_API_KEY}",
-      "api_key": "${OPENAI_API_KEY}"
+      "apiKey": "${GROQ_API_KEY}",
+      "api_key": "${GROQ_API_KEY}"
+    },
+    "perplexity:default": {
+      "provider": "perplexity",
+      "mode": "api_key",
+      "apiKey": "${PERPLEXITY_API_KEY}",
+      "api_key": "${PERPLEXITY_API_KEY}"
     }
   },
   "order": {
     "ollama": ["ollama:default"],
-    "openai": ["openai:default"]
+    "groq": ["groq:default"],
+    "perplexity": ["perplexity:default"]
   }
 }
