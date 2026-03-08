@@ -13,6 +13,10 @@ If you are new, use this order:
 3. Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for runtime design.
 4. Use [docs/TOOLS-AND-SKILLS.md](docs/TOOLS-AND-SKILLS.md) and [docs/MODEL-CHOICE.md](docs/MODEL-CHOICE.md) when you are choosing capabilities and models.
 
+| **Running on a Raspberry Pi?** |
+|--------------------------------|
+| If you're running this on a Raspberry Pi, here's a [single command](#raspberry-pi-one-command-setup) to get it all set up on a fresh install. Once you're SSH'd into the Pi, that's all you need. |
+
 ## Prerequisites
 
 - **Docker** and **Docker Compose**
@@ -63,6 +67,8 @@ OpenClaw is installed at **image build** time via the official installer. Upgrad
 ## Raspberry Pi: one-command setup
 
 On **Raspberry Pi OS 64-bit** (Pi 4 or 5), you can set up IronClaw from a fresh install with a single command. The script updates the system, installs Docker and jq, clones this repo, builds the image, configures the sample-agent, starts the gateway, and enables start-on-boot. It explains each step as it runs.
+
+You can [review the script in this repo](scripts/setup-raspberry-pi.sh) before running it.
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/kosar/iron-claw/main/scripts/setup-raspberry-pi.sh | bash
