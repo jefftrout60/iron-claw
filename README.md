@@ -2,6 +2,8 @@
 
 A factory for running hardened [OpenClaw](https://openclaw.ai) agent gateways in Docker. Each agent gets its own container, config, personality, skills, and channels while sharing one locked-down image and a single operational toolchain.
 
+**What we're doing.** We wanted to run multiple OpenClaw agents in isolation without hand-rolling config or security each time. So we wrapped the official gateway in a single image, one compose stack per agent, and scripts that keep host config as source of truth and sync into a runtime copy the container actually sees. No Docker inside the container, no writing back to your config. Once an agent is up, we don't get in the way: personalization and configuration happen as usual with OpenClaw (same config files, workspace, skills, channels). This is just the box it runs in. We dogfooded this on a Mac (several agents, cloud + local models) and on a Raspberry Pi (one agent, hardware like PiGlow and IR). Same repo, same design: you get a known-good setup whether you're on a laptop or a Pi, and the docs reflect what we actually run.
+
 ## Prerequisites
 
 - **Docker** and **Docker Compose**
