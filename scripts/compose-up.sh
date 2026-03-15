@@ -67,7 +67,7 @@ else
     tmp=$(mktemp)
     if [[ -f "$runtime_file" ]] && grep -q "<!-- guidelines from host workspace/AGENTS.md -->" "$runtime_file" 2>/dev/null; then
       # Replace existing host block with fresh content (from first line until ---)
-      { echo "<!-- guidelines from host workspace/AGENTS.md -->"; echo ""; cat "$AGENT_WORKSPACE/AGENTS.md"; echo ""; echo "---"; echo ""; sed -n '/^---$/,$ { /^---$/d; p }' "$runtime_file"; } > "$tmp"
+      { echo "<!-- guidelines from host workspace/AGENTS.md -->"; echo ""; cat "$AGENT_WORKSPACE/AGENTS.md"; echo ""; echo "---"; echo ""; awk 'found{print} /^---$/{found=1}' "$runtime_file"; } > "$tmp"
     elif [[ -f "$runtime_file" ]]; then
       { echo "<!-- guidelines from host workspace/AGENTS.md -->"; echo ""; cat "$AGENT_WORKSPACE/AGENTS.md"; echo ""; echo "---"; echo ""; cat "$runtime_file"; } > "$tmp"
     else
