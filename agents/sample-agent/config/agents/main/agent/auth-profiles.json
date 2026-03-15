@@ -6,15 +6,15 @@
       "apiKey": "ollama",
       "api_key": "ollama"
     },
-    "openai:default": {
-      "provider": "openai",
+    "perplexity:default": {
+      "provider": "perplexity",
       "mode": "api_key",
-      "apiKey": "${OPENAI_API_KEY}",
-      "api_key": "${OPENAI_API_KEY}"
+      "apiKey": "${PERPLEXITY_API_KEY}",
+      "api_key": "${PERPLEXITY_API_KEY}"
     }
   },
   "order": {
     "ollama": ["ollama:default"],
-    "openai": ["openai:default"]
+    "perplexity": ["perplexity:default"]
   }
 }

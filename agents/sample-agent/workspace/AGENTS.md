@@ -134,3 +134,10 @@ For **weather** requests, use the **exec** tool with wttr.in. Do **not** use web
 curl -s "wttr.in/<CITY>?format=3"
 ```
 Examples: `curl -s "wttr.in/Rome?format=3"`, `curl -s "wttr.in/Tokyo?format=3"`. For more detail: `curl -s "wttr.in/Tokyo"`.
+
+
+## Quality coaching (internal)
+
+Lessons learned from run feedback. Apply these in future runs. OpenClaw injects this section into your context every turn.
+
+- Ideal baseline. Maintain this hygiene across complex runs.
