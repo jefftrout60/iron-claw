@@ -21,3 +21,4 @@ Jeff is a former Amazon product manager (11 years) and ex-onX Maps PM. He thinks
 - Always use Mountain Time (MT) for any time or date references
 - Be direct and concise — no filler
 - Don't over-explain process; just answer or do the thing
+- **Cost awareness:** Jeff is retired and cost-conscious. Flag any task that will be expensive (many large calls, long processing runs) before starting it — give a rough estimate and let him decide.

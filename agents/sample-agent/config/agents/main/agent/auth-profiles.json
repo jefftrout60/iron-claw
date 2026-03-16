@@ -6,6 +6,12 @@
       "apiKey": "ollama",
       "api_key": "ollama"
     },
+    "groq:default": {
+      "provider": "groq",
+      "mode": "api_key",
+      "apiKey": "${GROQ_API_KEY}",
+      "api_key": "${GROQ_API_KEY}"
+    },
     "perplexity:default": {
       "provider": "perplexity",
       "mode": "api_key",
@@ -15,6 +21,7 @@
   },
   "order": {
     "ollama": ["ollama:default"],
+    "groq": ["groq:default"],
     "perplexity": ["perplexity:default"]
   }
 }

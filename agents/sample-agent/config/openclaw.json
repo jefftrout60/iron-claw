@@ -72,6 +72,61 @@
           }
         ]
       },
+      "groq": {
+        "baseUrl": "https://api.groq.com/openai/v1",
+        "api": "openai-completions",
+        "apiKey": "${GROQ_API_KEY}",
+        "models": [
+          {
+            "id": "meta-llama/llama-4-scout-17b-16e-instruct",
+            "name": "Llama 4 Scout 17B (Groq)",
+            "reasoning": false,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0.11,
+              "output": 0.34,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 131072,
+            "maxTokens": 8192
+          },
+          {
+            "id": "llama-3.3-70b-versatile",
+            "name": "Llama 3.3 70B (Groq fallback)",
+            "reasoning": false,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0.59,
+              "output": 0.79,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 128000,
+            "maxTokens": 32768
+          },
+          {
+            "id": "llama-3.1-8b-instant",
+            "name": "Llama 3.1 8B Instant (Groq heartbeat)",
+            "reasoning": false,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0.05,
+              "output": 0.08,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 128000,
+            "maxTokens": 8192
+          }
+        ]
+      },
       "perplexity": {
         "baseUrl": "https://api.perplexity.ai",
         "api": "openai-completions",
@@ -79,7 +134,7 @@
         "models": [
           {
             "id": "sonar-pro",
-            "name": "Perplexity Sonar Pro (primary)",
+            "name": "Perplexity Sonar Pro",
             "reasoning": false,
             "input": [
               "text"
@@ -95,7 +150,7 @@
           },
           {
             "id": "sonar",
-            "name": "Perplexity Sonar (heartbeat)",
+            "name": "Perplexity Sonar",
             "reasoning": false,
             "input": [
               "text"
@@ -116,8 +171,9 @@
   "agents": {
     "defaults": {
       "model": {
-        "primary": "perplexity/sonar-pro",
+        "primary": "groq/meta-llama/llama-4-scout-17b-16e-instruct",
         "fallbacks": [
+          "perplexity/sonar-pro",
           "ollama/qwen3:8b",
           "ollama/qwen3:14b"
         ]
@@ -129,7 +185,7 @@
       },
       "heartbeat": {
         "every": "2h",
-        "model": "perplexity/sonar"
+        "model": "groq/llama-3.1-8b-instant"
       }
     }
   },
@@ -201,9 +257,11 @@
     }
   },
   "tools": {
+    "exec": {},
     "web": {
       "search": {
-        "enabled": false
+        "enabled": true,
+        "provider": "perplexity"
       },
       "fetch": {
         "enabled": true,
