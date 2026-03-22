@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **Note:** All code changes made in this repository will be reviewed by Codex. Write clean, well-reasoned code — your work will be checked by another.
+
 ## Project Overview
 
 **IronClaw** is a factory system for spinning up hardened OpenClaw agent deployments on Docker. Each agent gets its own personality, skills, channels, secrets, and container while sharing the base Docker image and operational scripts. Runs on any Docker host (e.g. Mac, Linux, Raspberry Pi).

@@ -188,14 +188,17 @@ Examples: `curl -s "wttr.in/Rome?format=3"`, `curl -s "wttr.in/Tokyo?format=3"`.
 
 
 
+
+
+
 ## Quality coaching (internal)
 
 Lessons learned from run feedback. Apply these in future runs. OpenClaw injects this section into your context every turn.
 
 - Batch or simplify tool usage to lower latency/cost per run.
+- Reduce response time by cutting tool fan-out and prompt rounds.
 - Search results are off-topic (Continue IDE plugin, Chrome tabs, sign-in errors). Query scope is LLM retry/recovery, not browser sessions....
 - Search results are off-topic (Continue IDE plugin, Chrome tabs, device errors). Verify domain scope before responding to retry/recovery q...
 - Search results are off-topic (Chrome tabs, device sign-in, iPhone scanning). Query about LLM retry/recovery is distinct from browser sess...
 - Search results are off-topic (Chrome tabs, device sign-in, iPhone scanning). Verify scope—this query about LLM retry/recovery is distinct...
 - Search results are off-topic (Continue IDE plugin, Chrome tabs, sign-in errors). Verify domain scope: user likely asks for LLM retry logi...
-- LLM retry/recovery queries: verify scope—distinguish LLM timeout/failure vs. browser session recovery vs. IDE plugin issues before searching

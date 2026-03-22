@@ -1,0 +1,69 @@
+{
+  "version": "1.1",
+  "timestamp": "2026-03-21-215536",
+  "branch_name": "boostrap-ollama-v2",
+  "task_name": "podcast-summary-skill",
+  "session_number": 1,
+  "progress_update": {
+    "summary": "We completed the full planning cycle for the Podcast Summary skill — scope, research, and comprehensive implementation plan + task breakdown. The skill monitors RSS feeds, acquires transcripts via scraping or local Whisper, generates adaptive LLM summaries, delivers nightly email digests, ingests health newsletters from Gmail (auto-trashed after processing), and maintains a persistent health knowledge store. 26 requirements traced across 4 phases, 21 parent tasks, 42 sub-tasks. Ready to execute.",
+    "goal": "Build a podcast-summary skill for the IronClaw/OpenClaw agent. Success: Jeff wakes up daily to an email digest of new podcast episode summaries, health content persists to a queryable knowledge store, and on-demand summaries are available via Telegram/iMessage.",
+    "accomplished": [
+      "Scoped the full feature via /spectre:scope — 26 requirements confirmed, IN/OUT boundaries locked",
+      "Dispatched @finder + @web-research agents — discovered audio_bridge_service.py as Whisper bridge pattern, confirmed whisper.cpp ships whisper-server binary, found Tim Ferriss has free public transcripts, Huberman on podscript.ai, Attia needs Whisper fallback",
+      "Wrote comprehensive task_context.md covering vault pattern, transcript strategy per show, Gmail IMAP stdlib approach, whisper.cpp API details",
+      "Authored full implementation plan (specs/plan.md) — 4-phase architecture with host-side batch engine, always-on Whisper LaunchAgent, OpenClaw cron for 6AM notification",
+      "Generated complete task breakdown (specs/tasks.md) — 4 phases, 21 parents, 42 sub-tasks, 9 parallel execution waves, 100% requirement coverage"
+    ],
+    "now": "Planning complete. All artifacts saved. Next action is /spectre:execute in a fresh context window to begin Phase 1 implementation.",
+    "next_steps": [
+      "Run /spectre:execute to start Phase 1 (Core Infrastructure) — Whisper bridge build, vault structure, OPML importer, RSS poller, skill scaffold, engine dry-run, crontab setup",
+      "Phase 1 has no emails — just infrastructure and dry-run validation",
+      "Phase 2 (Transcript Pipeline + Email Digest) is when emails first flow — requires Whisper bridge to be live",
+      "After Phase 2 ships, run /spectre:handoff again before starting Phase 3 (Health Store + Newsletters)"
+    ],
+    "confidence": "high",
+    "constraints": [
+      "No jq in Docker container — all JSON via python3 stdlib",
+      "Available bins: bash, python3, node, curl, openssl only",
+      "No emails until Phase 2 complete (Whisper bridge live) — quality bar decision",
+      "whisper-server single mutex — episodes processed sequentially, not in parallel",
+      "Batch engine.py runs on Mac host (system crontab), not inside container — avoids turn timeout",
+      "openclaw.json schema is fixed — never add custom keys; all config in skill files"
+    ],
+    "decisions": [
+      "Whisper model routing: large-v3 for Attia/Huberman/Rhonda Patrick, small.en for all others — per-show override via feeds.json whisper_model field",
+      "Health store: JSON file (not SQLite) — ~500 entries/year, LLM-based future queries fit context window approach",
+      "Newsletter processing: Gmail IMAP + health-newsletters label → summarize → store → move to Gmail Trash (recoverable 30 days)"
+    ],
+    "blockers": [],
+    "open_questions": [
+      "HappyScribe scraping for Attia transcripts may return 403 — needs live test early in Phase 2 to determine if Whisper-only for Attia",
+      "Attia/FoundMyFitness member site login for full newsletter content — Playwright may be needed if JS-heavy"
+    ],
+    "risks": [
+      "HappyScribe bot protection on Attia transcripts (403) — Whisper fallback is reliable, so low business risk but affects summary quality",
+      "Overnight window capacity: ~40 episode max at ~10min/episode — typical nights are 2-5 new episodes so comfortable headroom",
+      "whisper-server /load endpoint for model switching — needs validation that it works reliably before relying on it in production"
+    ]
+  },
+  "working_set": {
+    "key_files": [
+      "docs/tasks/boostrap-ollama-v2/specs/plan.md",
+      "docs/tasks/boostrap-ollama-v2/specs/tasks.md",
+      "docs/tasks/boostrap-ollama-v2/task_context.md",
+      "docs/tasks/boostrap-ollama-v2/concepts/scope.md",
+      "agents/sample-agent/workspace/audio/audio_bridge_service.py",
+      "agents/sample-agent/workspace/skills/productwatcher/scripts/watcher_engine.py",
+      "agents/sample-agent/workspace/skills/send-email/scripts/send_email.py",
+      "agents/sample-agent/workspace/skills/restaurant-scout/scripts/scout-log.sh",
+      "agents/sample-agent/config/openclaw.json",
+      "agents/sample-agent/config/cron/jobs.json"
+    ],
+    "active_ids": [],
+    "recent_commands": []
+  },
+  "context": {
+    "wip_state": "uncommitted",
+    "last_commit": "651a322"
+  }
+}
