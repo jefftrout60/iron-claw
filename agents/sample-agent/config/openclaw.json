@@ -185,7 +185,7 @@
       },
       "heartbeat": {
         "every": "2h",
-        "model": "groq/llama-3.1-8b-instant"
+        "model": "perplexity/sonar"
       }
     }
   },
@@ -253,7 +253,8 @@
       "shopify-nexus": { "enabled": false },
       "fashion-radar": { "enabled": false },
       "style-profile": { "enabled": false },
-      "llm-manager": { "enabled": false }
+      "llm-manager": { "enabled": false },
+      "podcast-summary": { "enabled": true }
     }
   },
   "tools": {

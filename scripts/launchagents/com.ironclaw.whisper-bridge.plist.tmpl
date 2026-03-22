@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  LaunchAgent template for whisper-server (whisper.cpp).
+  PLACEHOLDER strings are substituted by setup-whisper-bridge.sh before installing.
+
+  Placeholders:
+    WHISPER_SERVER_BIN  — full path to whisper-server binary
+                          e.g. /Users/jeff/whisper.cpp/build/bin/whisper-server
+    WHISPER_MODEL_PATH  — full path to ggml-small.en.bin
+                          e.g. /Users/jeff/whisper.cpp/models/ggml-small.en.bin
+    WHISPER_PORT        — port number (default 18797)
+
+  Binds to 0.0.0.0 so Docker containers can reach it via host.docker.internal:18797.
+  Use --convert to accept MP3 input (requires ffmpeg in PATH).
+
+  Manage with:
+    launchctl load   ~/Library/LaunchAgents/com.ironclaw.whisper-bridge.plist
+    launchctl unload ~/Library/LaunchAgents/com.ironclaw.whisper-bridge.plist
+    launchctl list | grep whisper-bridge
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ironclaw.whisper-bridge</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>WHISPER_SERVER_BIN</string>
+    <string>-m</string>
+    <string>WHISPER_MODEL_PATH</string>
+    <string>--host</string>
+    <string>0.0.0.0</string>
+    <string>--port</string>
+    <string>WHISPER_PORT</string>
+    <string>--convert</string>
+    <string>-t</string>
+    <string>8</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/CURRENT_USER/Library/Logs/whisper-bridge.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/CURRENT_USER/Library/Logs/whisper-bridge.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+  </dict>
+</dict>
+</plist>
