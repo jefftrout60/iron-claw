@@ -19,6 +19,8 @@ import hashlib
 import json
 import logging
 import os
+import shutil
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -42,7 +44,14 @@ log = logging.getLogger("whisper_client")
 DEFAULT_WHISPER_URL = "http://localhost:18797"
 DOWNLOAD_DIR = Path("/tmp/podcast-summary")
 DOWNLOAD_TIMEOUT = 600       # 10 minutes for download
-TRANSCRIBE_TIMEOUT = 1800    # 30 minutes for transcription (handles 3-hr episodes)
+TRANSCRIBE_TIMEOUT = 1800    # 30 minutes per chunk (handles long segments)
+
+# Audio files larger than this threshold are split into chunks before
+# transcription. Pre-M5 Macs use CPU inference (no Metal tensor API), so
+# processing a full 1.5-hour episode in one shot exceeds the connection
+# timeout. 20 MB ≈ 20-30 min at typical podcast bitrates.
+CHUNK_THRESHOLD_BYTES = 20 * 1024 * 1024  # 20 MB
+CHUNK_DURATION_SECS = 600                 # 10-minute chunks
 
 # Shows that use large-v3 for better accuracy on dense scientific content.
 WHISPER_LARGE_SHOWS = {
@@ -244,6 +253,82 @@ def _delete_audio(audio_path: Path) -> None:
 # Public API
 # ---------------------------------------------------------------------------
 
+def _split_audio_chunks(audio_path: Path) -> list[Path]:
+    """Split audio_path into CHUNK_DURATION_SECS segments using ffmpeg -c copy.
+
+    Returns an ordered list of chunk paths inside a temp directory.
+    Caller must clean up the directory after use.
+
+    Raises:
+        RuntimeError: if ffmpeg segmentation fails.
+    """
+    chunk_dir = audio_path.parent / f"chunks_{audio_path.stem}"
+    chunk_dir.mkdir(exist_ok=True)
+    chunk_pattern = str(chunk_dir / "chunk_%03d.mp3")
+
+    cmd = [
+        "ffmpeg", "-i", str(audio_path),
+        "-f", "segment",
+        "-segment_time", str(CHUNK_DURATION_SECS),
+        "-c", "copy",
+        "-reset_timestamps", "1",
+        chunk_pattern,
+        "-y",
+    ]
+    result = subprocess.run(cmd, capture_output=True, timeout=120)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"ffmpeg segmentation failed: {result.stderr.decode(errors='replace')[:400]}"
+        )
+
+    chunks = sorted(chunk_dir.glob("chunk_*.mp3"))
+    if not chunks:
+        raise RuntimeError(f"ffmpeg produced no chunks in {chunk_dir}")
+    log.info("Split %s into %d chunk(s) of ~%ds each", audio_path.name, len(chunks), CHUNK_DURATION_SECS)
+    return chunks
+
+
+def _post_to_inference(audio_path: Path, whisper_url: str) -> str:
+    """POST a single audio file to /inference and return the transcript text.
+
+    Raises:
+        RuntimeError: on non-200 response or empty/missing text field.
+    """
+    audio_bytes = audio_path.read_bytes()
+    body, content_type = _build_multipart(
+        fields={"response_format": "json", "language": "en", "temperature": "0.0"},
+        files={"file": (audio_path.name, audio_bytes)},
+    )
+    req = urllib.request.Request(
+        url=f"{whisper_url}/inference",
+        data=body,
+        headers={"Content-Type": content_type},
+        method="POST",
+    )
+    log.info("POSTing to %s/inference (%.1f MB)", whisper_url, len(audio_bytes) / 1_048_576)
+    with urllib.request.urlopen(req, timeout=TRANSCRIBE_TIMEOUT) as resp:
+        status = resp.status
+        raw = resp.read()
+
+    if status != 200:
+        raise RuntimeError(
+            f"whisper-server returned HTTP {status}: {raw[:200].decode(errors='replace')}"
+        )
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"whisper-server response is not valid JSON: {exc}. "
+            f"Raw (first 200 bytes): {raw[:200].decode(errors='replace')}"
+        ) from exc
+
+    text = data.get("text", "")
+    if not text or not text.strip():
+        raise RuntimeError("whisper-server returned empty or missing 'text' field")
+    return text
+
+
 def is_available(whisper_url: str = DEFAULT_WHISPER_URL) -> bool:
     """Return True if the whisper-server is reachable (GET / returns 200).
 
@@ -303,59 +388,39 @@ def transcribe(
         target_model_path = _get_model_path(model_tier, model_dir)
         _switch_model(target_model_path, whisper_url)
 
-    # 3. POST multipart to /inference
+    # 3. POST to /inference — chunk large files to avoid CPU timeout on pre-M5 Macs
+    chunk_dir: Path | None = None
     try:
-        audio_bytes = audio_path.read_bytes()
-        body, content_type = _build_multipart(
-            fields={
-                "response_format": "json",
-                "language": "en",
-                "temperature": "0.0",
-            },
-            files={
-                "file": (audio_path.name, audio_bytes),
-            },
-        )
+        file_size = audio_path.stat().st_size
+        log.info("Audio size: %.1f MB, model=%s", file_size / 1_048_576, model_tier)
 
-        req = urllib.request.Request(
-            url=f"{whisper_url}/inference",
-            data=body,
-            headers={"Content-Type": content_type},
-            method="POST",
-        )
-        log.info(
-            "POSTing to %s/inference (%.1f MB, model=%s)",
-            whisper_url,
-            len(audio_bytes) / 1_048_576,
-            model_tier,
-        )
-        with urllib.request.urlopen(req, timeout=TRANSCRIBE_TIMEOUT) as resp:
-            status = resp.status
-            raw = resp.read()
-
-        if status != 200:
-            raise RuntimeError(
-                f"whisper-server returned HTTP {status}: {raw[:200].decode(errors='replace')}"
+        if file_size > CHUNK_THRESHOLD_BYTES:
+            log.info(
+                "File exceeds %.0f MB threshold — splitting into %ds chunks",
+                CHUNK_THRESHOLD_BYTES / 1_048_576,
+                CHUNK_DURATION_SECS,
             )
-
-        # 4. Parse response
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError(
-                f"whisper-server response is not valid JSON: {exc}. "
-                f"Raw (first 200 bytes): {raw[:200].decode(errors='replace')}"
-            ) from exc
-
-        text = data.get("text", "")
-        if not text or not text.strip():
-            raise RuntimeError(
-                "whisper-server returned empty or missing 'text' field in response"
-            )
+            chunks = _split_audio_chunks(audio_path)
+            chunk_dir = chunks[0].parent
+            parts: list[str] = []
+            for i, chunk in enumerate(chunks, 1):
+                log.info("Transcribing chunk %d/%d (%s)…", i, len(chunks), chunk.name)
+                parts.append(_post_to_inference(chunk, whisper_url))
+            text = " ".join(parts)
+        else:
+            text = _post_to_inference(audio_path, whisper_url)
 
         log.info("Transcription complete: %d characters", len(text))
 
     finally:
+        # 4. Clean up chunk directory if we split the audio.
+        if chunk_dir is not None:
+            try:
+                shutil.rmtree(chunk_dir)
+                log.info("Deleted chunk directory: %s", chunk_dir)
+            except Exception as exc:
+                log.warning("Could not delete chunk directory %s: %s", chunk_dir, exc)
+
         # 5. Restore default small.en model regardless of transcription outcome.
         # This runs even if transcription failed so the server is left in a
         # known state for the next call.

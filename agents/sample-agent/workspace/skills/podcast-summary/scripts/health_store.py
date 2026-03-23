@@ -5,6 +5,7 @@ import hashlib
 import json
 import re
 import sys
+import time
 import urllib.request
 from pathlib import Path
 
@@ -54,18 +55,22 @@ def extract_topics(summary: str, api_key: str, model: str) -> list[str]:
         method="POST",
     )
 
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
-        content = body["choices"][0]["message"]["content"].strip()
-        topics = json.loads(content)
-        if isinstance(topics, list):
-            return [str(t).lower() for t in topics]
-        print("[health_store] WARNING: topic extraction returned non-list JSON", file=sys.stderr)
-        return []
-    except Exception as exc:
-        print(f"[health_store] WARNING: topic extraction failed ({exc})", file=sys.stderr)
-        return []
+    for attempt in range(3):
+        try:
+            if attempt:
+                time.sleep(2 ** attempt)  # 2s, 4s backoff
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+            content = (body["choices"][0]["message"]["content"] or "").strip()
+            topics = json.loads(content)
+            if isinstance(topics, list):
+                return [str(t).lower() for t in topics]
+            print("[health_store] WARNING: topic extraction returned non-list JSON", file=sys.stderr)
+            return []
+        except Exception as exc:
+            if attempt == 2:
+                print(f"[health_store] WARNING: topic extraction failed ({exc})", file=sys.stderr)
+    return []
 
 
 def append_entry(entry_data: dict, api_key: str = "", model: str = "gpt-4o-mini") -> dict:
@@ -96,6 +101,18 @@ def append_entry(entry_data: dict, api_key: str = "", model: str = "gpt-4o-mini"
 
     vault_path = get_vault_path(_KNOWLEDGE_FILE)
     data = load_vault(vault_path)
+
+    # Dedup: skip if an entry with the same show + title + date already exists.
+    # Keyed on stable fields so re-runs with different LLM summaries don't duplicate.
+    new_key = (entry["show"], entry["episode_title"], entry["date"])
+    for existing in data.get("entries", []):
+        if (existing.get("show"), existing.get("episode_title"), existing.get("date")) == new_key:
+            print(
+                f"[health_store] Skipping duplicate: {entry['episode_title']!r} ({entry['date']})",
+                file=sys.stderr,
+            )
+            return existing
+
     data["entries"].append(entry)
     save_vault(vault_path, data)
 

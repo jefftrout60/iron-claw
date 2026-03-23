@@ -34,6 +34,7 @@ import sys
 import urllib.request
 from datetime import datetime
 from email import message_from_bytes
+from email.header import decode_header, make_header
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 
@@ -232,15 +233,15 @@ def fetch_newsletters(imap_email: str, app_password: str) -> list[dict]:
             imap.logout()
             return []
 
-        # Search for UNSEEN messages
-        status, data = imap.search(None, "UNSEEN")
+        # Search for ALL messages (newsletters arrive pre-read via MS365 transfer)
+        status, data = imap.search(None, "ALL")
         if status != "OK":
             print(f"[gmail_fetcher] SEARCH failed: {data}", file=sys.stderr)
             imap.logout()
             return []
 
         msg_ids = data[0].split() if data[0] else []
-        print(f"[gmail_fetcher] Found {len(msg_ids)} UNSEEN message(s)")
+        print(f"[gmail_fetcher] Found {len(msg_ids)} message(s)")
 
         for msg_id in msg_ids:
             try:
@@ -274,15 +275,22 @@ def fetch_newsletters(imap_email: str, app_password: str) -> list[dict]:
 def _process_message(imap: imaplib.IMAP4_SSL, msg_id: bytes) -> dict:
     """Fetch, parse, and trash a single message. Returns a newsletter dict."""
     status, raw_data = imap.fetch(msg_id, "(RFC822)")
-    if status != "OK" or not raw_data or not raw_data[0]:
+    if status != "OK" or not raw_data:
         raise ValueError(f"fetch status={status}")
 
-    # raw_data[0] is a tuple: (response_code, message_bytes)
-    message_bytes = raw_data[0][1]
+    # Gmail IMAP sometimes returns a mix of tuples and bare bytes (e.g. b')').
+    # Find the first tuple element — that's the (response_code, message_bytes) pair.
+    message_bytes = None
+    for part in raw_data:
+        if isinstance(part, tuple) and len(part) >= 2:
+            message_bytes = part[1]
+            break
+    if not message_bytes:
+        raise ValueError(f"no message data in fetch response for msg {msg_id}")
     msg = message_from_bytes(message_bytes)
 
-    subject = msg.get("Subject", "")
-    from_addr = msg.get("From", "")
+    subject = str(make_header(decode_header(msg.get("Subject", "") or "")))
+    from_addr = str(make_header(decode_header(msg.get("From", "") or "")))
     date_str = _parse_date(msg.get("Date", ""))
     sender_slug = _sender_slug(from_addr)
 
@@ -395,11 +403,11 @@ def main() -> None:
                 imap.logout()
                 sys.exit(1)
 
-            status, data = imap.search(None, "UNSEEN")
+            status, data = imap.search(None, "ALL")
             count = len(data[0].split()) if status == "OK" and data[0] else 0
             imap.logout()
 
-            print(f"[gmail_fetcher] UNSEEN messages in '{LABEL_FOLDER}': {count}")
+            print(f"[gmail_fetcher] Messages in '{LABEL_FOLDER}': {count}")
         except Exception as exc:
             print(f"[gmail_fetcher] ERROR: {exc}", file=sys.stderr)
             sys.exit(1)

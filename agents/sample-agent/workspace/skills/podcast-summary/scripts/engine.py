@@ -145,8 +145,8 @@ def check_new_episodes(
     feeds = feeds_data.get("feeds", [])
     existing_episode_ids = {ep["id"] for ep in episodes_data.get("episodes", [])}
 
-    active_feeds = [f for f in feeds if f.get("state") == "active"]
-    inactive_feeds = [f for f in feeds if f.get("state") != "active"]
+    active_feeds = [f for f in feeds if f.get("state") in ("active", "one-off")]
+    inactive_feeds = [f for f in feeds if f.get("state") not in ("active", "one-off")]
 
     if dry_run:
         print(f"=== Podcast Summary Engine — DRY RUN ===")
@@ -185,6 +185,15 @@ def check_new_episodes(
 
         # Filter episodes already in the cache
         new_episodes = [ep for ep in episodes if ep["id"] not in existing_episode_ids]
+
+        # one-off feeds: take only the single newest episode, then flip to inactive
+        if feed.get("state") == "one-off":
+            if new_episodes:
+                newest_ep = max(new_episodes, key=lambda ep: ep.get("pub_date", ""))
+                new_episodes = [newest_ep]
+            if not dry_run:
+                feed["state"] = "inactive"
+                print(f"[engine] one-off complete — {feed_title} set to inactive")
 
         # Update feed timestamps
         feed["last_checked"] = now_iso

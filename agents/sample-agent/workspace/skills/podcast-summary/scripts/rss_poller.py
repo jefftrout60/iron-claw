@@ -122,13 +122,10 @@ def _extract_rss_episode(item: ET.Element, feed_dict: dict) -> dict | None:
     enc = item.find("enclosure")
     if enc is None:
         title = _text(item, "title") or "(no title)"
-        print(f"[rss_poller] WARNING: skipping item '{title}' — no enclosure", file=sys.stderr)
-        return None
+        return None  # no audio — skip silently
 
     audio_url = enc.get("url", "").strip()
     if not audio_url:
-        title = _text(item, "title") or "(no title)"
-        print(f"[rss_poller] WARNING: skipping item '{title}' — enclosure has no url", file=sys.stderr)
         return None
 
     raw_guid = _text(item, "guid") or audio_url
@@ -190,8 +187,7 @@ def _extract_atom_episode(entry: ET.Element, feed_dict: dict) -> dict | None:
 
     if not audio_url:
         title = _atom_text(entry, "title") or "(no title)"
-        print(f"[rss_poller] WARNING: skipping Atom entry '{title}' — no enclosure link", file=sys.stderr)
-        return None
+        return None  # no audio — skip silently
 
     id_el = entry.find(f"{{{_ATOM_NS}}}id")
     raw_guid = (id_el.text or "").strip() if id_el is not None else audio_url

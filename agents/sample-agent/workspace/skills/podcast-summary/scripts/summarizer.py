@@ -102,6 +102,20 @@ def call_openai(prompt: str, system_prompt: str, api_key: str, model: str = "gpt
 
 
 # ---------------------------------------------------------------------------
+# Per-show extra instructions appended to the user prompt.
+# Key: lowercase substring of the show title.  Value: instruction string.
+_SHOW_EXTRA_INSTRUCTIONS: dict[str, str] = {
+    "triggernometry": (
+        "\n\nTriggernometry always ends with the hosts asking the guest: "
+        "\"What is the one thing we are not talking about that we should be?\" "
+        "Find the guest's answer to that question and append a final section to your summary "
+        "titled exactly \"The Unasked Question:\" followed by their answer. "
+        "If the transcript does not contain the answer, omit the section entirely."
+    ),
+}
+
+
+# ---------------------------------------------------------------------------
 # Per-style prompt builders
 # ---------------------------------------------------------------------------
 
@@ -124,6 +138,12 @@ def _build_prompt(
             "Aim for 4-6 paragraphs with depth."
         )
 
+    show_lower = show.lower()
+    show_extra = next(
+        (instr for key, instr in _SHOW_EXTRA_INSTRUCTIONS.items() if key in show_lower),
+        "",
+    )
+
     if summary_style == "deep_science":
         system = (
             "You are a science communicator summarizing health and longevity podcast episodes. "
@@ -137,7 +157,7 @@ def _build_prompt(
             "(4) any studies or experts cited. "
             "Be specific and concrete — avoid vague generalities."
             f"\n\nShow: {show}\nEpisode: {title}\nTranscript:\n{transcript}"
-            + extended_suffix
+            + show_extra + extended_suffix
         )
 
     elif summary_style == "long_form_interview":
@@ -151,7 +171,7 @@ def _build_prompt(
             "write 2-3 paragraphs. "
             "If the content is lighter (casual conversation, entertainment), write 1 tight paragraph."
             f"\n\nShow: {show}\nEpisode: {title}\nTranscript:\n{transcript}"
-            + extended_suffix
+            + show_extra + extended_suffix
         )
 
     elif summary_style == "commentary":
@@ -161,7 +181,7 @@ def _build_prompt(
             "in 1-2 paragraphs. "
             "Focus on what was actually argued, not just what was discussed."
             f"\n\nShow: {show}\nEpisode: {title}\nTranscript:\n{transcript}"
-            + extended_suffix
+            + show_extra + extended_suffix
         )
 
     elif summary_style == "hunting_outdoor":
@@ -174,7 +194,7 @@ def _build_prompt(
             "Archery/Shooting, Fitness & Training, Guest Profile, Conservation, Trip Planning. "
             "Only include categories that were meaningfully discussed."
             f"\n\nShow: {show}\nEpisode: {title}\nTranscript:\n{transcript}"
-            + extended_suffix
+            + show_extra + extended_suffix
         )
 
     elif summary_style == "devotional":
@@ -184,7 +204,7 @@ def _build_prompt(
             "the scripture passage discussed, "
             "the main spiritual insight or application taught."
             f"\n\nShow: {show}\nEpisode: {title}\nTranscript:\n{transcript}"
-            + extended_suffix
+            + show_extra + extended_suffix
         )
 
     else:
@@ -193,7 +213,7 @@ def _build_prompt(
         user = (
             f"Summarize this podcast episode concisely."
             f"\n\nShow: {show}\nEpisode: {title}\nTranscript:\n{transcript}"
-            + extended_suffix
+            + show_extra + extended_suffix
         )
 
     return system, user
