@@ -30,6 +30,7 @@ def _format_date(iso_date: str) -> str:
     """Parse ISO 8601 date string and return 'Mon Mar 20, 2026' format."""
     try:
         dt = datetime.fromisoformat(iso_date.replace("Z", "+00:00"))
+        dt = dt.astimezone()  # convert UTC to local time
         return dt.strftime("%a %b %-d, %Y")
     except (ValueError, AttributeError):
         return iso_date or ""
@@ -163,6 +164,7 @@ def send_digest(
     smtp_password: str | None = None,
     newsletter_count: int = 0,
     newsletter_names: list[str] | None = None,
+    subject_override: str | None = None,
 ) -> bool:
     """
     Build and send the digest email via send_email.py.
@@ -173,6 +175,8 @@ def send_digest(
     Credentials are passed via environment variables so send_email.py can
     pick them up — the script reads SMTP_FROM_EMAIL and GMAIL_APP_PASSWORD
     from env, then falls back to its own skills/send-email/.env file.
+
+    subject_override: if provided, replaces the default subject line.
     """
     if not episodes:
         print("No new episodes — skipping digest.", flush=True)
@@ -180,11 +184,14 @@ def send_digest(
 
     html_body = build_digest_html(episodes, newsletter_count, newsletter_names)
 
-    today = datetime.now()
-    date_str = today.strftime("%a %b %-d")  # e.g. "Sun Mar 22"
-    n = len(episodes)
-    plural = "s" if n != 1 else ""
-    subject = f"\U0001f3a7 Podcast Digest \u2014 {n} new episode{plural} \u00b7 {date_str}"
+    if subject_override:
+        subject = subject_override
+    else:
+        today = datetime.now()
+        date_str = today.strftime("%a %b %-d")  # e.g. "Sun Mar 22"
+        n = len(episodes)
+        plural = "s" if n != 1 else ""
+        subject = f"\U0001f3a7 Podcast Digest \u2014 {n} new episode{plural} \u00b7 {date_str}"
 
     send_email_path = _find_send_email()
 

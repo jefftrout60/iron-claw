@@ -1,4 +1,1 @@
-# MEMORY.md - Long-Term Memory
-
-_(This file starts empty. As you learn things worth keeping, add them here.)_
-_(During heartbeat memory maintenance, curate daily notes into this file.)_
+{"tool_counts": {"memory_get": 1}, "scores": {"overall": 5.0}, "last_curated": "2026-03-27"}

@@ -40,6 +40,24 @@ Examples:
 - Product/store queries (Shopify stores) → use shopify-nexus skill first (MCP + fallback). For watch lists use productwatcher. NOT raw web_fetch for structured product/policy lookups.
 - Any task with a matching skill → follow that skill's SKILL.md pipeline
 
+### Rule 6a: Podcast summaries — exec pipeline only, NEVER inline
+
+When a user asks to summarize a podcast episode, you MUST run the `podcast-summary` skill pipeline. Follow the SKILL.md steps exactly.
+
+**FORBIDDEN tools for podcast summary requests:** `web_search`, `pdf`, `browser`, `web_fetch` (except for the brief 2-3 sentence preview in Step 2). Do NOT use these tools to generate a summary.
+
+**FORBIDDEN responses:**
+- Returning episode content, bullet points, or any summary inline in chat
+- Using web_search or pdf to research the episode and summarize it yourself
+
+**REQUIRED — execute ALL of these steps via exec:**
+1. `exec: bash .../podcast-log.sh on_demand_start ...`
+2. Use `web_fetch` for a 2-3 sentence preview only, then reply to user
+3. `exec: python3 .../on_demand.py --query "..." --agent sample-agent`
+4. `exec: bash .../podcast-log.sh on_demand_done ...`
+
+Step 3 is non-negotiable. A web preview does NOT replace it. If you skip `exec: python3 on_demand.py`, that is a pipeline failure. The full summary goes to email via Whisper transcription — never inline in chat.
+
 ### Rule 6: Offer, don't ask
 When presenting results, suggest next steps as offers at the end ("I can check sizing or look at different price ranges — just say the word") but NEVER as blocking questions that require an answer before you continue. The user should get immediate value from every message.
 
@@ -191,14 +209,192 @@ Examples: `curl -s "wttr.in/Rome?format=3"`, `curl -s "wttr.in/Tokyo?format=3"`.
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ## Quality coaching (internal)
 
 Lessons learned from run feedback. Apply these in future runs. OpenClaw injects this section into your context every turn.
 
-- Batch or simplify tool usage to lower latency/cost per run.
-- Reduce response time by cutting tool fan-out and prompt rounds.
-- Search results are off-topic (Continue IDE plugin, Chrome tabs, sign-in errors). Query scope is LLM retry/recovery, not browser sessions....
-- Search results are off-topic (Continue IDE plugin, Chrome tabs, device errors). Verify domain scope before responding to retry/recovery q...
-- Search results are off-topic (Chrome tabs, device sign-in, iPhone scanning). Query about LLM retry/recovery is distinct from browser sess...
-- Search results are off-topic (Chrome tabs, device sign-in, iPhone scanning). Verify scope—this query about LLM retry/recovery is distinct...
-- Search results are off-topic (Continue IDE plugin, Chrome tabs, sign-in errors). Verify domain scope: user likely asks for LLM retry logi...
+- Batch and coalesce reads/writes, cache lightweight results, and cut tool fan-out and prompt rounds to reduce latency and API cost.
+- Prefer local/fast tools first (e.g., web_fetch before browser); use recommended local models and fallbacks.
+- Use a single fallback chain with exponential backoff; respect Retry-After headers and handle 429s.
+- Emit per-run telemetry and append brief run summaries and short tags for complex runs (intent, key metrics, latencies, token counts) for auditing.

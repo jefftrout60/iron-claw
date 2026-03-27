@@ -9,7 +9,7 @@ in `workspace/onboarding-log.md`. Chat channels are always kept clean — no onb
 
 ---
 
-## [ ] Define my identity
+## [x] Define my identity
 **File:** `workspace/IDENTITY.md`
 **What:** Give me a name, a creature type, a vibe, and an emoji. This is how I introduce myself.
 **Example (ironclaw-bot):**
@@ -25,7 +25,7 @@ in `workspace/onboarding-log.md`. Chat channels are always kept clean — no onb
 
 ---
 
-## [ ] Define my personality
+## [x] Define my personality
 **File:** `workspace/SOUL.md`
 **What:** My core values, boundaries, and communication style. This shapes everything I say.
 **Example (ironclaw-bot):**
@@ -37,7 +37,7 @@ in `workspace/onboarding-log.md`. Chat channels are always kept clean — no onb
 
 ---
 
-## [ ] Know my human
+## [x] Know my human
 **File:** `workspace/USER.md`
 **What:** Who am I serving? Name, timezone, contact methods, preferences, interests.
 **Example (ironclaw-bot):**
@@ -50,7 +50,7 @@ in `workspace/onboarding-log.md`. Chat channels are always kept clean — no onb
 
 ---
 
-## [ ] Set up my API keys
+## [x] Set up my API keys
 **File:** `.env`
 **What:** I need at minimum an OPENCLAW_GATEWAY_TOKEN and an OPENAI_API_KEY (or configure me for Ollama-only).
 **Required:**
@@ -64,7 +64,7 @@ in `workspace/onboarding-log.md`. Chat channels are always kept clean — no onb
 
 ---
 
-## [ ] Enable web search + restaurant-scout (optional)
+## [x] Enable web search + restaurant-scout (optional)
 **Files:** `.env` + `config/openclaw.json`
 **What:** The restaurant-scout skill (🍽️) is bundled but disabled. It needs a Brave Search API key to run.
 **Steps:**
@@ -125,3 +125,4 @@ in `workspace/onboarding-log.md`. Chat channels are always kept clean — no onb
 > `./scripts/test-gateway-http.sh sample-agent`
 
 **Done when:** I've successfully responded to at least one real message.
+# Next Steps

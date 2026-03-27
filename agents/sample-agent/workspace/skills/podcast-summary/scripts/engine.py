@@ -310,6 +310,14 @@ def process_episodes(
         try:
             transcript, source_quality = transcript_fetcher.fetch(episode, feed)
 
+            # Build show-notes topic map — only when the transcript isn't the show notes itself
+            show_notes_text = ""
+            if source_quality != "show_notes":
+                raw_notes = episode.get("full_notes") or episode.get("description") or ""
+                notes_clean = transcript_fetcher.strip_html(raw_notes).strip()
+                if len(notes_clean) > 200:
+                    show_notes_text = notes_clean[:1500]
+
             # Auto-classify show style if not yet set
             if feed.get("summary_style") is None:
                 style = summarizer.classify_show_style(
@@ -326,9 +334,12 @@ def process_episodes(
                 episode,
                 transcript,
                 feed.get("summary_style"),
-                "standard",
+                "extended",
                 api_key,
                 model,
+                source_quality=source_quality,
+                summary_paragraphs=feed.get("summary_paragraphs", 0),
+                show_notes=show_notes_text,
             )
 
             enriched = {
@@ -425,14 +436,14 @@ def process_newsletters(env: dict) -> tuple[int, list[str]]:
                 {"title": nl["subject"]},
                 nl["body"],
                 "deep_science",
-                "standard",
+                "extended",
                 api_key,
                 model,
             )
 
             show_name = _newsletter_show_name(nl["sender_slug"])
 
-            health_store.append_entry(
+            stored = health_store.append_entry(
                 {
                     "show": show_name,
                     "episode_title": nl["subject"],
@@ -447,8 +458,9 @@ def process_newsletters(env: dict) -> tuple[int, list[str]]:
                 model,
             )
 
-            count += 1
-            show_names.append(show_name)
+            if stored is not None:
+                count += 1
+                show_names.append(show_name)
             print(f'[engine] \u2713 newsletter archived: "{nl["subject"]}" ({show_name})')
 
         except Exception as exc:

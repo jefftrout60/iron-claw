@@ -111,7 +111,7 @@ def append_entry(entry_data: dict, api_key: str = "", model: str = "gpt-4o-mini"
                 f"[health_store] Skipping duplicate: {entry['episode_title']!r} ({entry['date']})",
                 file=sys.stderr,
             )
-            return existing
+            return None
 
     data["entries"].append(entry)
     save_vault(vault_path, data)

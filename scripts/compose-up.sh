@@ -330,6 +330,39 @@ if [[ " ${COMPOSE_ARGS[*]} " == *" -d "* ]]; then
   else
     echo "[$AGENT_NAME] Learning bridge disabled (IRONCLAW_DISABLE_LEARNING_BRIDGE=1)."
   fi
+
+  # Start/refresh the podcast watcher when running detached.
+  # Monitors session JSONL files for podcast requests and fires on_demand.py
+  # via docker exec so the full Whisper + email pipeline runs alongside
+  # the agent's natural short Telegram preview.
+  if [[ "${IRONCLAW_DISABLE_PODCAST_WATCHER:-0}" != "1" ]]; then
+    PODCAST_WATCHER="$IRONCLAW_ROOT/scripts/podcast-watcher.py"
+    PODCAST_PID_FILE="$AGENT_LOG_DIR/podcast-watcher.pid"
+    PODCAST_LOG_FILE="$AGENT_LOG_DIR/podcast-watcher.log"
+
+    if [[ -f "$PODCAST_PID_FILE" ]]; then
+      old_pid=$(cat "$PODCAST_PID_FILE" 2>/dev/null || true)
+      if [[ -n "$old_pid" ]] && ps -p "$old_pid" >/dev/null 2>&1; then
+        old_cmd=$(ps -o command= -p "$old_pid" 2>/dev/null || true)
+        if echo "$old_cmd" | grep -qE "podcast-watcher\.py[[:space:]]+$AGENT_NAME"; then
+          kill "$old_pid" >/dev/null 2>&1 || true
+          sleep 1
+        fi
+      fi
+      rm -f "$PODCAST_PID_FILE"
+    fi
+
+    if [[ -f "$PODCAST_WATCHER" ]]; then
+      nohup python3 "$PODCAST_WATCHER" "$AGENT_NAME" >> "$PODCAST_LOG_FILE" 2>&1 &
+      watcher_pid=$!
+      echo "$watcher_pid" > "$PODCAST_PID_FILE"
+      echo "[$AGENT_NAME] Podcast watcher started (pid $watcher_pid)."
+    else
+      echo "[$AGENT_NAME] Podcast watcher script missing at $PODCAST_WATCHER; skipping." >&2
+    fi
+  else
+    echo "[$AGENT_NAME] Podcast watcher disabled (IRONCLAW_DISABLE_PODCAST_WATCHER=1)."
+  fi
 fi
 
 # Pi-style agents (Pi host): trigger PiGlow "ready" light show so users see bot is up.

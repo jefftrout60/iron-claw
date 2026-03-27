@@ -195,14 +195,27 @@ def _select_folder(imap: imaplib.IMAP4_SSL, folder: str) -> bool:
 
 
 def _move_to_trash(imap: imaplib.IMAP4_SSL, msg_id: bytes) -> None:
-    """Move a message to Gmail Trash using MOVE extension, or flag+expunge."""
+    """Move a message to Gmail Trash and remove it from the inbox.
+
+    Gmail's IMAP MOVE from a label folder only removes that label — it does NOT
+    remove the INBOX label, so the message stays visible in the inbox.  After
+    moving to Trash we explicitly strip the Inbox label using Gmail's
+    X-GM-LABELS extension to make the message disappear from the inbox.
+    """
     try:
-        # Gmail supports the MOVE extension; this is the preferred approach
         imap.uid("MOVE", msg_id, "[Gmail]/Trash")
     except Exception:
-        # Fallback: mark Deleted and expunge
-        imap.store(msg_id, "+FLAGS", "\\Deleted")
+        # Fallback: mark Deleted and expunge (uses UID, not sequence number)
+        imap.uid("STORE", msg_id, "+FLAGS", "\\Deleted")
         imap.expunge()
+        return
+
+    # Explicitly remove the Inbox label so the message no longer appears in
+    # the inbox view (Gmail MOVE from a label folder does not do this).
+    try:
+        imap.uid("STORE", msg_id, "-X-GM-LABELS", "\\Inbox")
+    except Exception:
+        pass  # Not critical — message is in Trash, inbox removal is best-effort
 
 
 # ---------------------------------------------------------------------------
@@ -233,8 +246,10 @@ def fetch_newsletters(imap_email: str, app_password: str) -> list[dict]:
             imap.logout()
             return []
 
-        # Search for ALL messages (newsletters arrive pre-read via MS365 transfer)
-        status, data = imap.search(None, "ALL")
+        # Search for ALL messages using UIDs (newsletters arrive pre-read via
+        # MS365 transfer).  Must use uid("SEARCH") so that the IDs returned
+        # are UIDs, consistent with the uid("FETCH") / uid("MOVE") calls below.
+        status, data = imap.uid("SEARCH", None, "ALL")
         if status != "OK":
             print(f"[gmail_fetcher] SEARCH failed: {data}", file=sys.stderr)
             imap.logout()
@@ -274,7 +289,7 @@ def fetch_newsletters(imap_email: str, app_password: str) -> list[dict]:
 
 def _process_message(imap: imaplib.IMAP4_SSL, msg_id: bytes) -> dict:
     """Fetch, parse, and trash a single message. Returns a newsletter dict."""
-    status, raw_data = imap.fetch(msg_id, "(RFC822)")
+    status, raw_data = imap.uid("FETCH", msg_id, "(RFC822)")
     if status != "OK" or not raw_data:
         raise ValueError(f"fetch status={status}")
 

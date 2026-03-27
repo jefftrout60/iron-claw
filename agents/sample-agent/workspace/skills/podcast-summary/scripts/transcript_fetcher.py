@@ -25,11 +25,15 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import re
+import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
 
 # ---------------------------------------------------------------------------
@@ -513,6 +517,246 @@ def _strategy_recently_failed(feed_dict: dict, strategy_name: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Strategy: fetch_openai_whisper — cloud transcription via OpenAI Whisper API
+# ---------------------------------------------------------------------------
+
+_OPENAI_WHISPER_MAX_BYTES = 24 * 1024 * 1024  # 24 MB (API limit is 25 MB)
+_OPENAI_WHISPER_SEGMENT_MINUTES = 15           # Default max segment duration (cap)
+_OPENAI_WHISPER_TARGET_SEGMENT_MB = 20         # Target segment size to stay under limit
+
+
+def _get_audio_duration_secs(input_path: str) -> Optional[float]:
+    """Return audio duration in seconds via ffprobe, or None on failure."""
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                input_path,
+            ],
+            capture_output=True, text=True, timeout=30,
+        )
+        return float(result.stdout.strip())
+    except Exception:
+        return None
+
+
+def _load_openai_api_key() -> str:
+    """Load OPENAI_API_KEY — checks os.environ first, then walks to repo root .env."""
+    # Check environment first (works inside Docker where .env is not accessible)
+    env_val = os.environ.get("OPENAI_API_KEY", "")
+    if env_val:
+        return env_val
+    # Fall back to .env file walk (works on host)
+    try:
+        current = Path(__file__).resolve().parent
+        for candidate in [current, *current.parents]:
+            if (candidate / "CLAUDE.md").exists():
+                env_path = candidate / "agents" / "sample-agent" / ".env"
+                with open(env_path) as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith("OPENAI_API_KEY="):
+                            val = line[len("OPENAI_API_KEY="):]
+                            if len(val) >= 2 and val[0] == val[-1] and val[0] in ('"', "'"):
+                                val = val[1:-1]
+                            return val
+    except Exception:
+        pass
+    return ""
+
+
+def _download_audio(url: str, dest_path: str) -> int:
+    """Stream-download audio URL to dest_path. Returns file size in bytes."""
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(req, timeout=300) as resp:
+        with open(dest_path, "wb") as f:
+            while True:
+                chunk = resp.read(512 * 1024)
+                if not chunk:
+                    break
+                f.write(chunk)
+    return os.path.getsize(dest_path)
+
+
+def _split_audio_ffmpeg(input_path: str) -> list[str]:
+    """Split audio into size-aware segments via ffmpeg.
+
+    Segment duration is calculated dynamically: target _OPENAI_WHISPER_TARGET_SEGMENT_MB
+    per chunk based on actual file bitrate, capped at _OPENAI_WHISPER_SEGMENT_MINUTES.
+    Returns sorted list of temp file paths (caller must delete them).
+    """
+    file_size = os.path.getsize(input_path)
+    segment_secs = _OPENAI_WHISPER_SEGMENT_MINUTES * 60  # default cap
+
+    duration = _get_audio_duration_secs(input_path)
+    if duration and duration > 0:
+        target_bytes = _OPENAI_WHISPER_TARGET_SEGMENT_MB * 1024 * 1024
+        calculated = int(target_bytes * duration / file_size)
+        segment_secs = max(60, min(calculated, segment_secs))
+        log.info(
+            "_split_audio_ffmpeg: file=%.1f MB, duration=%.0fs, target segment=%ds",
+            file_size / 1_048_576, duration, segment_secs,
+        )
+
+    tmp_dir = tempfile.mkdtemp(prefix="podcast_whisper_")
+    pattern = os.path.join(tmp_dir, "seg_%04d.mp3")
+    cmd = [
+        "ffmpeg", "-i", input_path,
+        "-f", "segment",
+        "-segment_time", str(segment_secs),
+        "-c", "copy",
+        "-reset_timestamps", "1",
+        pattern,
+        "-loglevel", "error",
+        "-y",
+    ]
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, timeout=300)
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        log.warning("_split_audio_ffmpeg: failed: %s", exc)
+        return []
+
+    return sorted(
+        os.path.join(tmp_dir, f)
+        for f in os.listdir(tmp_dir)
+        if f.startswith("seg_")
+    )
+
+
+def _transcribe_segment_openai(audio_path: str, api_key: str) -> Optional[str]:
+    """POST one audio file to OpenAI /v1/audio/transcriptions. Returns plain text."""
+    boundary = "----PodcastTranscriptBoundary7x"
+    with open(audio_path, "rb") as f:
+        audio_bytes = f.read()
+
+    filename = os.path.basename(audio_path)
+    parts: list[bytes] = [
+        (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n'
+        ).encode(),
+        (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="response_format"\r\n\r\ntext\r\n'
+        ).encode(),
+        (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+            f"Content-Type: audio/mpeg\r\n\r\n"
+        ).encode() + audio_bytes + b"\r\n",
+        f"--{boundary}--\r\n".encode(),
+    ]
+    body = b"".join(parts)
+
+    req = urllib.request.Request(
+        "https://api.openai.com/v1/audio/transcriptions",
+        data=body,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            return resp.read().decode("utf-8").strip()
+    except urllib.error.HTTPError as e:
+        err_body = ""
+        try:
+            err_body = e.read().decode("utf-8", errors="replace")
+        except Exception:
+            pass
+        log.warning("_transcribe_segment_openai: HTTP %d: %s", e.code, err_body[:200])
+        return None
+    except Exception as exc:
+        log.warning("_transcribe_segment_openai: %s", exc)
+        return None
+
+
+def fetch_openai_whisper(
+    episode_dict: dict, feed_dict: dict
+) -> Optional[tuple[str, str]]:
+    """Transcribe episode audio via OpenAI Whisper API (whisper-1 = whisper-large-v2).
+
+    Downloads audio, splits files >24 MB into 15-minute segments with ffmpeg,
+    transcribes each segment, and returns the concatenated result.
+
+    Returns (text, "whisper_large") or None on failure.
+    """
+    api_key = _load_openai_api_key()
+    if not api_key:
+        log.warning("fetch_openai_whisper: OPENAI_API_KEY not found — skipping")
+        return None
+
+    audio_url = episode_dict.get("audio_url")
+    if not audio_url:
+        log.warning("fetch_openai_whisper: no audio_url in episode_dict")
+        return None
+
+    tmp_audio = tempfile.mktemp(suffix=".mp3", prefix="podcast_dl_")
+    segment_paths: list[str] = []
+
+    try:
+        log.info("fetch_openai_whisper: downloading %s", audio_url)
+        file_size = _download_audio(audio_url, tmp_audio)
+        log.info("fetch_openai_whisper: downloaded %.1f MB", file_size / 1024 / 1024)
+
+        if file_size <= _OPENAI_WHISPER_MAX_BYTES:
+            files_to_transcribe = [tmp_audio]
+        else:
+            log.info("fetch_openai_whisper: file >24 MB — splitting with ffmpeg")
+            segment_paths = _split_audio_ffmpeg(tmp_audio)
+            if not segment_paths:
+                log.warning("fetch_openai_whisper: ffmpeg split produced no segments")
+                return None
+            files_to_transcribe = segment_paths
+            log.info(
+                "fetch_openai_whisper: %d segments to transcribe",
+                len(files_to_transcribe),
+            )
+
+        transcripts: list[str] = []
+        for i, seg_path in enumerate(files_to_transcribe, 1):
+            log.info(
+                "fetch_openai_whisper: transcribing segment %d/%d",
+                i, len(files_to_transcribe),
+            )
+            text = _transcribe_segment_openai(seg_path, api_key)
+            if text:
+                transcripts.append(text)
+            else:
+                log.warning("fetch_openai_whisper: segment %d returned no text", i)
+
+        if not transcripts:
+            return None
+
+        full_transcript = " ".join(transcripts)
+        log.info(
+            "fetch_openai_whisper: complete — %d chars", len(full_transcript)
+        )
+        return full_transcript, "whisper_large"
+
+    except Exception as exc:
+        log.warning("fetch_openai_whisper: unexpected error: %s", exc)
+        return None
+
+    finally:
+        try:
+            if os.path.exists(tmp_audio):
+                os.unlink(tmp_audio)
+        except Exception:
+            pass
+        if segment_paths:
+            try:
+                import shutil
+                shutil.rmtree(os.path.dirname(segment_paths[0]), ignore_errors=True)
+            except Exception:
+                pass
+
+
+# ---------------------------------------------------------------------------
 # Strategy dispatch table
 # ---------------------------------------------------------------------------
 
@@ -521,6 +765,7 @@ _STRATEGY_FUNCS: dict[str, object] = {
     "fetch_tim_blog": fetch_tim_blog,
     "fetch_podscript_ai": fetch_podscript_ai,
     "fetch_happyscribe": fetch_happyscribe,
+    "fetch_openai_whisper": fetch_openai_whisper,
     "show_notes": show_notes,
     # whisper strategies are handled inline in fetch()
 }

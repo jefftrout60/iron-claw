@@ -51,7 +51,7 @@ TRANSCRIBE_TIMEOUT = 1800    # 30 minutes per chunk (handles long segments)
 # processing a full 1.5-hour episode in one shot exceeds the connection
 # timeout. 20 MB ≈ 20-30 min at typical podcast bitrates.
 CHUNK_THRESHOLD_BYTES = 20 * 1024 * 1024  # 20 MB
-CHUNK_DURATION_SECS = 600                 # 10-minute chunks
+CHUNK_DURATION_SECS = 300                 # 5-minute chunks (safer for CPU inference)
 
 # Shows that use large-v3 for better accuracy on dense scientific content.
 WHISPER_LARGE_SHOWS = {
@@ -82,19 +82,32 @@ def _find_repo_root() -> Path:
 def _load_env(agent_name: str = "sample-agent") -> dict[str, str]:
     """Parse agents/{agent_name}/.env and return key→value dict.
 
+    Checks os.environ first (works inside Docker container where .env is
+    injected as environment variables). Falls back to file-based lookup
+    for host-side execution where the repo root is accessible.
+
     Handles blank lines, # comments, and quoted values.
     Missing file returns empty dict without raising.
     """
-    env_path = _find_repo_root() / "agents" / agent_name / ".env"
+    _KNOWN_KEYS = (
+        "OPENAI_API_KEY", "PODCAST_SUMMARY_MODEL",
+        "DIGEST_TO_EMAIL", "SMTP_FROM_EMAIL", "GMAIL_APP_PASSWORD",
+    )
+    env_from_environ = {k: os.environ[k] for k in _KNOWN_KEYS if k in os.environ}
+    if env_from_environ.get("OPENAI_API_KEY"):
+        return env_from_environ
+
+    # Fall back to .env file — works on host
     env: dict[str, str] = {}
     try:
+        env_path = _find_repo_root() / "agents" / agent_name / ".env"
         with open(env_path) as fh:
             for line in fh:
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
                     k, _, v = line.partition("=")
                     env[k.strip()] = v.strip().strip('"').strip("'")
-    except FileNotFoundError:
+    except (FileNotFoundError, OSError):
         pass
     return env
 
@@ -169,11 +182,15 @@ def _switch_model(model_path: str, whisper_url: str) -> None:
     Logs a warning and returns without raising if the endpoint fails — some
     whisper-server versions do not implement /load and this must be soft.
     """
-    payload = json.dumps({"model": model_path}).encode()
+    # /load expects multipart/form-data (same as /inference), not JSON.
+    body, content_type = _build_multipart(
+        fields={"model": model_path},
+        files={},
+    )
     req = urllib.request.Request(
         url=f"{whisper_url}/load",
-        data=payload,
-        headers={"Content-Type": "application/json"},
+        data=body,
+        headers={"Content-Type": content_type},
         method="POST",
     )
     try:
@@ -226,10 +243,15 @@ def _download_audio(audio_url: str) -> Path:
         headers={"User-Agent": "Mozilla/5.0 (podcast-summary/1.0)"},
     )
     with urllib.request.urlopen(req, timeout=DOWNLOAD_TIMEOUT) as resp:
-        data = resp.read()
+        with open(dest, "wb") as f:
+            while True:
+                chunk = resp.read(512 * 1024)
+                if not chunk:
+                    break
+                f.write(chunk)
 
-    dest.write_bytes(data)
-    log.info("Audio saved to %s (%d bytes)", dest, len(data))
+    size = dest.stat().st_size
+    log.info("Audio saved to %s (%d bytes)", dest, size)
     return dest
 
 

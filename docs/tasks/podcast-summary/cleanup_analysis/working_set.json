@@ -1,0 +1,26 @@
+{
+  "scope_mode": "context",
+  "branch_name": "podcast-summary",
+  "session_date": "2026-03-27",
+  "files": [
+    "agents/sample-agent/workspace/skills/podcast-summary/scripts/whisper_client.py",
+    "agents/sample-agent/workspace/skills/podcast-summary/scripts/transcript_fetcher.py",
+    "agents/sample-agent/workspace/skills/podcast-summary/scripts/summarizer.py",
+    "agents/sample-agent/workspace/skills/podcast-summary/scripts/on_demand.py",
+    "agents/sample-agent/workspace/skills/podcast-summary/scripts/engine.py",
+    "agents/sample-agent/workspace/skills/podcast-summary/scripts/rss_poller.py",
+    "agents/sample-agent/workspace/skills/podcast-summary/scripts/vault.py",
+    "agents/sample-agent/workspace/skills/podcast-summary/scripts/importer.py",
+    "agents/sample-agent/workspace/skills/podcast-summary/scripts/add_feed.py",
+    "agents/sample-agent/workspace/skills/podcast-summary/scripts/health_store.py",
+    "agents/sample-agent/workspace/skills/podcast-summary/scripts/digest_emailer.py",
+    "agents/sample-agent/workspace/skills/podcast-summary/scripts/run_backlog.sh",
+    "agents/sample-agent/workspace/skills/podcast-summary/scripts/run_backlog2.sh",
+    "agents/sample-agent/workspace/skills/podcast-summary/scripts/run_backlog3.sh",
+    "agents/sample-agent/workspace/skills/podcast-summary/scripts/run_backlog3_cleanup.sh",
+    "agents/sample-agent/workspace/skills/podcast-summary/scripts/run_backlog4.sh",
+    "agents/sample-agent/workspace/skills/podcast-summary/scripts/run_backlog4_cleanup.sh",
+    "agents/sample-agent/workspace/skills/podcast-summary/podcast_vault/feeds.json"
+  ],
+  "note": "No git available; scope derived from session context"
+}

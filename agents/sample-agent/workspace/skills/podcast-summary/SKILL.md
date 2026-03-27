@@ -42,25 +42,19 @@ Read the user's message and identify which intent applies:
 
 **Trigger:** User names a specific episode by show + number, title, or pastes a URL.
 
-### STEP 1 — Log the request (exec, mandatory)
+**Reply immediately. Do NOT run on_demand.py — the podcast watcher handles transcription independently.**
+
+### STEP 1 — Reply to user immediately
+
+Reply naturally with 2-4 sentences using what you know about this episode or show. Give the user a genuine brief preview — the episode topic, key theme, or what it covers. Then add one sentence noting a full detailed summary with timestamps is on its way to their email.
+
+Do NOT include Apple Podcasts links or any other links. Do NOT run on_demand.py — the background pipeline handles transcription independently.
+
+### STEP 2 — Log the request (exec, mandatory)
 
 ```
 exec: bash /home/openclaw/.openclaw/workspace/skills/podcast-summary/scripts/podcast-log.sh on_demand_start show="{show}" episode="{ep}"
 ```
-
-### STEP 2 — Run on_demand.py (exec, mandatory)
-
-```
-exec: python3 /home/openclaw/.openclaw/workspace/skills/podcast-summary/scripts/on_demand.py --query "{compose a single query: episode number, URL, or 'episode title keywords'}" --agent sample-agent
-```
-
-### STEP 3 — Log completion and confirm to user (exec + reply, mandatory)
-
-```
-exec: bash /home/openclaw/.openclaw/workspace/skills/podcast-summary/scripts/podcast-log.sh on_demand_done show="{show}" episode="{ep}"
-```
-
-Tell the user: "I've queued the summary for [Show] — [Episode]. It will arrive in your email shortly."
 
 ---
 
@@ -68,25 +62,31 @@ Tell the user: "I've queued the summary for [Show] — [Episode]. It will arrive
 
 **Trigger:** Vague request naming a show and a topic, but not a specific episode.
 
+**This is a two-tier pipeline. Both tiers MUST run.**
+
 ### STEP 1 — Log the request (exec, mandatory)
 
 ```
 exec: bash /home/openclaw/.openclaw/workspace/skills/podcast-summary/scripts/podcast-log.sh on_demand_start show="{show}" episode="topic:{keywords}"
 ```
 
-### STEP 2 — Run on_demand.py with topic search (exec, mandatory)
+### STEP 2 — Quick Telegram reply (reply, mandatory)
+
+Tell the user: "Searching [Show] for episodes about '[topic]' — running Whisper transcription on the best match. Full summary coming to your email."
+
+**Do NOT stop here. Step 3 is mandatory.**
+
+### STEP 3 — Full transcription + email summary (exec, mandatory)
 
 ```
 exec: python3 /home/openclaw/.openclaw/workspace/skills/podcast-summary/scripts/on_demand.py --query "{show name} {keywords}" --agent sample-agent
 ```
 
-### STEP 3 — Log completion and confirm to user (exec + reply, mandatory)
+### STEP 4 — Log completion (exec, mandatory)
 
 ```
 exec: bash /home/openclaw/.openclaw/workspace/skills/podcast-summary/scripts/podcast-log.sh on_demand_done show="{show}" episode="topic:{keywords}"
 ```
-
-Tell the user: "I searched [Show]'s recent episodes for '[topic]' and queued the best match for summarization. Check your email."
 
 ---
 
@@ -214,10 +214,11 @@ Tell the user: "Added to health store — [Episode] is now in your health knowle
 
 ## Hard Rules
 
-1. **NEVER return a summary inline in chat.** All summaries go via email. Always.
-2. **NEVER attempt to trigger the nightly batch digest.** It runs automatically via system crontab.
-3. **If on_demand.py fails or returns an error**, tell the user:
+1. **NEVER skip on_demand.py.** A quick web preview does not replace Whisper transcription. Both must run.
+2. **NEVER return a full summary inline in chat.** Detailed summaries go via email. A 2-3 sentence Telegram preview is fine; a full summary is not.
+3. **NEVER attempt to trigger the nightly batch digest.** It runs automatically via system crontab.
+4. **If on_demand.py fails or returns an error**, tell the user:
    "I had trouble finding that episode — try providing the RSS URL directly."
-4. **Zero narration between steps.** Do not say "Let me look that up" or "I'm searching now." Just execute.
-5. **Scripts run at:** `/home/openclaw/.openclaw/workspace/skills/podcast-summary/scripts/`
-6. **Vault files are at:** `/home/openclaw/.openclaw/workspace/skills/podcast-summary/podcast_vault/`
+5. **Zero narration between steps.** Do not say "Let me look that up" or "I'm searching now." Just execute.
+6. **Scripts run at:** `/home/openclaw/.openclaw/workspace/skills/podcast-summary/scripts/`
+7. **Vault files are at:** `/home/openclaw/.openclaw/workspace/skills/podcast-summary/podcast_vault/`

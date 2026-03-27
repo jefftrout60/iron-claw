@@ -77,6 +77,14 @@ def poll(feed_dict: dict) -> list:
         return episodes
 
     new_episodes = [ep for ep in episodes if _parse_iso(ep["pub_date"]) > cutoff]
+
+    skip_patterns = feed_dict.get("skip_title_contains", [])
+    if skip_patterns:
+        new_episodes = [
+            ep for ep in new_episodes
+            if not any(p.lower() in ep.get("title", "").lower() for p in skip_patterns)
+        ]
+
     return new_episodes
 
 

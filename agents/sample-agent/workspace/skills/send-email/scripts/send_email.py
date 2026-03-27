@@ -10,6 +10,7 @@ Usage:
   body-file: path to plain text or HTML body (use --html for HTML).
   --attach: optional paths to files to attach (can repeat or list multiple).
 """
+import imaplib
 import os
 import sys
 import smtplib
@@ -57,6 +58,25 @@ def _get_smtp_credentials() -> tuple:
         from_email = from_email or parsed.get("SMTP_FROM_EMAIL", "")
         password = password or parsed.get("GMAIL_APP_PASSWORD", "")
     return (from_email, password)
+
+
+def _delete_from_sent(from_email: str, password: str, subject: str) -> None:
+    """Connect via IMAP and delete the just-sent message from Gmail Sent folder."""
+    try:
+        mail = imaplib.IMAP4_SSL("imap.gmail.com")
+        mail.login(from_email, password)
+        mail.select('"[Gmail]/Sent Mail"')
+        # Search for messages with this subject sent today
+        from datetime import date
+        today = date.today().strftime("%d-%b-%Y")
+        escaped = subject.replace('"', '\\"')
+        _, msg_ids = mail.search(None, f'(SINCE "{today}" SUBJECT "{escaped}")')
+        for msg_id in msg_ids[0].split():
+            mail.store(msg_id, "+FLAGS", "\\Deleted")
+        mail.expunge()
+        mail.logout()
+    except Exception:
+        pass  # Never fail the send over a cleanup error
 
 
 def main():
@@ -125,6 +145,8 @@ def main():
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(from_email, password)
         server.send_message(msg)
+
+    _delete_from_sent(from_email, password, subject)
 
     n = len([p for p in attachments if os.path.isfile(p.strip())])
     if n:

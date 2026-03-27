@@ -39,9 +39,20 @@ def _find_repo_root() -> Path:
 
 
 def _load_env(agent_name: str = "sample-agent") -> dict:
-    env_path = _find_repo_root() / "agents" / agent_name / ".env"
+    import os as _os
+
+    _KNOWN_KEYS = (
+        "OPENAI_API_KEY", "PODCAST_SUMMARY_MODEL",
+        "DIGEST_TO_EMAIL", "SMTP_FROM_EMAIL", "GMAIL_APP_PASSWORD",
+    )
+    env_from_environ = {k: _os.environ[k] for k in _KNOWN_KEYS if k in _os.environ}
+    if env_from_environ.get("OPENAI_API_KEY"):
+        return env_from_environ
+
+    # Fall back to .env file — works on host
     env: dict = {}
     try:
+        env_path = _find_repo_root() / "agents" / agent_name / ".env"
         with open(env_path) as f:
             for line in f:
                 line = line.strip()
@@ -53,7 +64,7 @@ def _load_env(agent_name: str = "sample-agent") -> dict:
                 if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
                     value = value[1:-1]
                 env[key] = value
-    except OSError:
+    except (OSError, FileNotFoundError):
         pass
     return env
 
@@ -62,7 +73,13 @@ def _load_env(agent_name: str = "sample-agent") -> dict:
 # OpenAI API call — urllib only, no external packages
 # ---------------------------------------------------------------------------
 
-def call_openai(prompt: str, system_prompt: str, api_key: str, model: str = "gpt-4o-mini") -> str:
+def call_openai(
+    prompt: str,
+    system_prompt: str,
+    api_key: str,
+    model: str = "gpt-4o-mini",
+    max_tokens: int = 2000,
+) -> str:
     """Call OpenAI Chat Completions and return the assistant message content."""
     payload = json.dumps({
         "model": model,
@@ -71,7 +88,7 @@ def call_openai(prompt: str, system_prompt: str, api_key: str, model: str = "gpt
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.3,
-        "max_tokens": 2000,
+        "max_tokens": max_tokens,
     }).encode()
 
     req = urllib.request.Request(
@@ -112,6 +129,41 @@ _SHOW_EXTRA_INSTRUCTIONS: dict[str, str] = {
         "titled exactly \"The Unasked Question:\" followed by their answer. "
         "If the transcript does not contain the answer, omit the section entirely."
     ),
+    "vomradio": (
+        "\n\nVOM Radio episodes always end with the host asking: "
+        "\"How can we equip our listeners to pray?\" "
+        "Find that question and the guest's answer and append a final section to your summary "
+        "titled exactly \"How to Pray:\" followed by their answer in full. "
+        "If the transcript does not contain the answer, omit the section entirely."
+    ),
+    "rokcast": (
+        "\n\nFor any gear, products, or equipment discussed: list every specific item "
+        "by name — brand, model, and any key details mentioned (price, weight, feature). "
+        "Do NOT group them into a single sentence like 'they discussed suppressors and stoves'. "
+        "Each product deserves its own bullet point. If a comparison or strong opinion was "
+        "given about a product, include it."
+    ),
+    "peter attia": (
+        "\n\nIf this is an AMA (Ask Me Anything) episode — indicated by 'AMA' in the title — "
+        "structure the entire summary as a Q&A: list every question asked and provide "
+        "Peter's full answer for each one. Do not collapse multiple questions into a paragraph. "
+        "Format each entry as:\n**Q: [question]**\nA: [Peter's answer]\n\n"
+        "If this is NOT an AMA episode, summarize normally."
+    ),
+    "foundmyfitness": (
+        "\n\nIf this is an AMA (Ask Me Anything) episode — indicated by 'AMA' in the title — "
+        "structure the entire summary as a Q&A: list every question asked and provide "
+        "Rhonda's full answer for each one. Do not collapse multiple questions into a paragraph. "
+        "Format each entry as:\n**Q: [question]**\nA: [Rhonda's answer]\n\n"
+        "If this is NOT an AMA episode, summarize normally."
+    ),
+    "hunt backcountry": (
+        "\n\nIf this is a Monday Minisode — indicated by 'MM' in the title — it is a listener "
+        "Q&A episode. Structure the entire summary as a Q&A: list every listener question and "
+        "provide the host's full answer for each one. Do not collapse multiple questions into a "
+        "paragraph. Format each entry as:\n**Q: [listener question]**\nA: [host's answer]\n\n"
+        "If this is NOT an MM episode, summarize normally as a long-form interview."
+    ),
 }
 
 
@@ -125,6 +177,9 @@ def _build_prompt(
     title: str,
     transcript: str,
     depth: str,
+    source_quality: str = "",
+    summary_paragraphs: int = 0,
+    show_notes: str = "",
 ) -> tuple[str, str]:
     """Return (system_prompt, user_prompt) for the given style.
 
@@ -135,8 +190,28 @@ def _build_prompt(
         extended_suffix = (
             "\n\nProvide a more detailed summary than usual. "
             "Include specific quotes, statistics, or data points mentioned. "
-            "Aim for 4-6 paragraphs with depth."
+            "Aim for 6-8 paragraphs with depth."
         )
+
+    qa_suffix = ""
+    if "q&a" in title.lower():
+        qa_suffix = (
+            "\n\nThis episode has 'Q&A' in the title. Structure the summary as a Q&A: "
+            "list every question asked and provide the full answer for each one. "
+            "Do not collapse multiple questions into a paragraph. "
+            "Format each entry as:\n**Q: [question]**\nA: [answer]"
+        )
+
+    list_suffix = (
+        "\n\nIMPORTANT: If the episode presents any numbered or explicit list of tips, "
+        "techniques, steps, gear items, species, recommendations, or rules — enumerate "
+        "ALL items in that list individually. Do not abbreviate, collapse, or say "
+        "'and more'. Every item must appear. "
+        "This also applies to any named framework where a specific number is part of the concept "
+        "(e.g. 'the three macronutrients of happiness', 'four idols that won't make you happy', "
+        "'five-step protocol') — list every component of that numbered framework explicitly. "
+        "Do not refer to the framework by name alone without enumerating its parts."
+    )
 
     show_lower = show.lower()
     show_extra = next(
@@ -144,20 +219,40 @@ def _build_prompt(
         "",
     )
 
+    topic_map_section = ""
+    if show_notes and len(show_notes.strip()) > 200:
+        topic_map_section = (
+            f"\n\nEpisode description / show notes (use as a topic guide — "
+            f"ensure your summary explicitly covers each topic or framework mentioned):\n"
+            f"{show_notes.strip()[:1500]}"
+        )
+
     if summary_style == "deep_science":
+        large_whisper = "whisper_large" in source_quality
+        if summary_paragraphs:
+            para_count = str(summary_paragraphs)
+        elif large_whisper:
+            para_count = "6-8"
+        else:
+            para_count = "3-4"
+        specificity = (
+            " Name every specific protocol, supplement, compound, dosage, or intervention"
+            " mentioned — do not summarise them as 'a number of protocols' without listing them."
+            if large_whisper else ""
+        )
         system = (
             "You are a science communicator summarizing health and longevity podcast episodes. "
             "Write in clear, accessible prose that accurately represents the science."
         )
         user = (
-            "Summarize this podcast episode in 3-4 paragraphs covering: "
+            f"Summarize this podcast episode in {para_count} paragraphs covering: "
             "(1) the main topic and why it matters, "
             "(2) key scientific claims or findings discussed, "
             "(3) specific protocols, supplements, or actionable recommendations mentioned, "
             "(4) any studies or experts cited. "
-            "Be specific and concrete — avoid vague generalities."
+            f"Be specific and concrete — avoid vague generalities.{specificity}"
             f"\n\nShow: {show}\nEpisode: {title}\nTranscript:\n{transcript}"
-            + show_extra + extended_suffix
+            + show_extra + topic_map_section + list_suffix + extended_suffix + qa_suffix
         )
 
     elif summary_style == "long_form_interview":
@@ -171,18 +266,32 @@ def _build_prompt(
             "write 2-3 paragraphs. "
             "If the content is lighter (casual conversation, entertainment), write 1 tight paragraph."
             f"\n\nShow: {show}\nEpisode: {title}\nTranscript:\n{transcript}"
-            + show_extra + extended_suffix
+            + show_extra + topic_map_section + list_suffix + extended_suffix + qa_suffix
         )
 
     elif summary_style == "commentary":
         system = "You are summarizing a commentary or discussion podcast."
-        user = (
-            "Summarize the key arguments, positions, and conclusions from this episode "
-            "in 1-2 paragraphs. "
-            "Focus on what was actually argued, not just what was discussed."
-            f"\n\nShow: {show}\nEpisode: {title}\nTranscript:\n{transcript}"
-            + show_extra + extended_suffix
-        )
+        if summary_paragraphs:
+            user = (
+                f"Write a comprehensive {summary_paragraphs}-paragraph summary of this episode. "
+                "Structure your summary to cover: "
+                "(1) the central thesis or question being examined and why it matters, "
+                "(2) each major argument or position developed, with the key reasoning behind it, "
+                "(3) evidence, sources, or references cited to support the arguments, "
+                "(4) counterarguments or alternative perspectives addressed, "
+                "(5) practical implications, calls to action, or conclusions drawn. "
+                "Be thorough — this is meant as a detailed reference summary, not a brief overview."
+                f"\n\nShow: {show}\nEpisode: {title}\nTranscript:\n{transcript}"
+                + show_extra + topic_map_section + list_suffix + extended_suffix + qa_suffix
+            )
+        else:
+            user = (
+                "Summarize the key arguments, positions, and conclusions from this episode "
+                "in 1-2 paragraphs. "
+                "Focus on what was actually argued, not just what was discussed."
+                f"\n\nShow: {show}\nEpisode: {title}\nTranscript:\n{transcript}"
+                + show_extra + topic_map_section + list_suffix + extended_suffix + qa_suffix
+            )
 
     elif summary_style == "hunting_outdoor":
         system = "You are summarizing a hunting or outdoor sports podcast."
@@ -194,8 +303,48 @@ def _build_prompt(
             "Archery/Shooting, Fitness & Training, Guest Profile, Conservation, Trip Planning. "
             "Only include categories that were meaningfully discussed."
             f"\n\nShow: {show}\nEpisode: {title}\nTranscript:\n{transcript}"
-            + show_extra + extended_suffix
+            + show_extra + topic_map_section + list_suffix + extended_suffix + qa_suffix
         )
+
+    elif summary_style == "orvis_fly_fishing":
+        system = "You are summarizing the Orvis Fly-Fishing Podcast hosted by Tom Rosenbauer."
+        user = (
+            "This episode has two distinct sections. Summarize each section separately.\n\n"
+            "## Part 1: Listener Q&A\n"
+            "List every question Tom answers in the Q&A segment. For each question:\n"
+            "- State the question clearly (paraphrase if needed)\n"
+            "- Summarize Tom's answer in 2-4 sentences\n"
+            "Include all questions — do not skip any.\n\n"
+            "## Part 2: Guest Interview\n"
+            "Summarize the guest interview in 3-6 sentences covering: who the guest is, "
+            "the main topics discussed, and the most useful or actionable advice shared."
+            f"\n\nShow: {show}\nEpisode: {title}\nTranscript:\n{transcript}"
+            + show_extra + topic_map_section + list_suffix + extended_suffix + qa_suffix
+        )
+
+    elif summary_style == "meateater":
+        system = (
+            "You are summarizing The MeatEater Podcast with Steve Rinella — "
+            "a wide-ranging conversation show about hunting, fishing, wild food, conservation, and the outdoors."
+        )
+        if summary_paragraphs:
+            user = (
+                f"Write a {summary_paragraphs}-paragraph summary of this episode as flowing prose. "
+                "Cover: who the guest is and their background, the main stories and topics discussed, "
+                "any notable opinions or debates, conservation or policy topics raised, "
+                "and memorable moments or takeaways. "
+                "Write it as a narrative summary a reader could use to decide whether to listen."
+                f"\n\nShow: {show}\nEpisode: {title}\nTranscript:\n{transcript}"
+                + show_extra + topic_map_section + list_suffix + extended_suffix + qa_suffix
+            )
+        else:
+            user = (
+                "Summarize this episode in 2-3 paragraphs as flowing prose. "
+                "Cover: who the guest is, the main stories and topics discussed, "
+                "and any notable takeaways or memorable moments."
+                f"\n\nShow: {show}\nEpisode: {title}\nTranscript:\n{transcript}"
+                + show_extra + topic_map_section + list_suffix + extended_suffix + qa_suffix
+            )
 
     elif summary_style == "devotional":
         system = "You are summarizing a Christian devotional or Bible teaching podcast."
@@ -204,7 +353,7 @@ def _build_prompt(
             "the scripture passage discussed, "
             "the main spiritual insight or application taught."
             f"\n\nShow: {show}\nEpisode: {title}\nTranscript:\n{transcript}"
-            + show_extra + extended_suffix
+            + show_extra + topic_map_section + list_suffix + extended_suffix + qa_suffix
         )
 
     else:
@@ -213,7 +362,7 @@ def _build_prompt(
         user = (
             f"Summarize this podcast episode concisely."
             f"\n\nShow: {show}\nEpisode: {title}\nTranscript:\n{transcript}"
-            + show_extra + extended_suffix
+            + show_extra + topic_map_section + list_suffix + extended_suffix + qa_suffix
         )
 
     return system, user
@@ -229,6 +378,8 @@ _TRANSCRIPT_LIMITS: dict[str, int] = {
     "long_form_interview": 12000,
     "commentary": 10000,
     "hunting_outdoor": 10000,
+    "orvis_fly_fishing": 12000,
+    "meateater": 12000,
     "devotional": 6000,
 }
 _DEFAULT_TRANSCRIPT_LIMIT = 12000
@@ -245,6 +396,9 @@ def summarize(
     depth: str = "standard",
     api_key: str | None = None,
     model: str | None = None,
+    source_quality: str = "",
+    summary_paragraphs: int = 0,
+    show_notes: str = "",
 ) -> str:
     """Generate a summary for an episode using the appropriate style prompt.
 
@@ -253,7 +407,7 @@ def summarize(
                         'show_title', 'description', 'full_notes').
         transcript_text: Full transcript string, or None/empty if unavailable.
         summary_style:  One of deep_science, long_form_interview, commentary,
-                        hunting_outdoor, devotional.
+                        hunting_outdoor, meateater, orvis_fly_fishing, devotional.
         depth:          "standard" or "extended" (extended = longer, more detailed).
         api_key:        OpenAI API key. If None, read from .env.
         model:          Model name. If None, read PODCAST_SUMMARY_MODEL from .env,
@@ -293,13 +447,25 @@ def summarize(
             content = "(No transcript or show notes available.)"
             content_label = "[Summary based on show notes only — no content available]\n\n"
 
-    # Truncate transcript to stay within token budget
+    # Truncate transcript to stay within token budget.
+    # For high-quality transcripts (whisper_large / openai_whisper), use a
+    # larger window so long Huberman/Attia episodes get meaningful coverage.
     char_limit = _TRANSCRIPT_LIMITS.get(summary_style, _DEFAULT_TRANSCRIPT_LIMIT)
+    high_quality = "whisper_large" in source_quality or "openai_whisper" in source_quality
+    if high_quality:
+        char_limit = max(char_limit, 40000)
     if len(content) > char_limit:
         content = content[:char_limit]
 
-    system_prompt, user_prompt = _build_prompt(summary_style, show, title, content, depth)
-    summary = call_openai(user_prompt, system_prompt, api_key, model)
+    # Use more output tokens when a long summary is requested
+    effective_paragraphs = summary_paragraphs or (6 if high_quality else 0)
+    max_tokens = 4000 if effective_paragraphs >= 8 else 2000
+
+    system_prompt, user_prompt = _build_prompt(
+        summary_style, show, title, content, depth, source_quality, summary_paragraphs,
+        show_notes=show_notes,
+    )
+    summary = call_openai(user_prompt, system_prompt, api_key, model, max_tokens=max_tokens)
 
     return content_label + summary
 
@@ -310,10 +476,11 @@ def classify_show_style(
     api_key: str | None = None,
     model: str | None = None,
 ) -> str:
-    """Classify a podcast show into one of the five summary style categories.
+    """Classify a podcast show into one of the seven summary style categories.
 
     Sends the show title and optional description to the LLM and returns one
-    of: deep_science, long_form_interview, commentary, hunting_outdoor, devotional.
+    of: deep_science, long_form_interview, commentary, hunting_outdoor,
+    meateater, orvis_fly_fishing, devotional.
 
     Defaults to "long_form_interview" if the LLM returns an unrecognised value
     or the call fails.
@@ -326,13 +493,15 @@ def classify_show_style(
                           then fall back to "gpt-4o-mini".
 
     Returns:
-        One of the five valid style strings.
+        One of the seven valid style strings.
     """
     valid_styles = {
         "deep_science",
         "long_form_interview",
         "commentary",
         "hunting_outdoor",
+        "meateater",
+        "orvis_fly_fishing",
         "devotional",
     }
     fallback = "long_form_interview"
@@ -358,6 +527,8 @@ def classify_show_style(
         "long_form_interview (long conversations with varied guests), "
         "commentary (news/politics/philosophy discussion), "
         "hunting_outdoor (hunting, fishing, outdoor sports), "
+        "meateater (MeatEater Podcast — hunting, wild food, conservation with Steve Rinella), "
+        "orvis_fly_fishing (Orvis fly-fishing podcast with Tom Rosenbauer), "
         "devotional (Christian/religious teaching). "
         f"Show title: {show_title}. "
         f"Description: {show_description}. "
@@ -401,7 +572,8 @@ def _parse_args() -> argparse.Namespace:
     sub_sum = subparsers.add_parser("summarize", help="Summarize an episode")
     sub_sum.add_argument("--style", required=True,
                          choices=["deep_science", "long_form_interview", "commentary",
-                                  "hunting_outdoor", "devotional"],
+                                  "hunting_outdoor", "meateater", "orvis_fly_fishing",
+                                  "devotional"],
                          help="Summary style")
     sub_sum.add_argument("--title", required=True, help="Episode title")
     sub_sum.add_argument("--show", default="Test Show", help="Show name")
@@ -418,7 +590,8 @@ def _parse_args() -> argparse.Namespace:
     #   python3 summarizer.py --style deep_science --title "..." --transcript "..."
     parser.add_argument("--style",
                         choices=["deep_science", "long_form_interview", "commentary",
-                                 "hunting_outdoor", "devotional"])
+                                 "hunting_outdoor", "meateater", "orvis_fly_fishing",
+                                 "devotional"])
     parser.add_argument("--title")
     parser.add_argument("--show", default="Test Show")
     parser.add_argument("--transcript", default="")
