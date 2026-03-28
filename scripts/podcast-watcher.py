@@ -14,6 +14,7 @@ Usage: python3 scripts/podcast-watcher.py <agent-name> [--poll N]
 import argparse
 import json
 import logging
+import logging.handlers
 import os
 import re
 import subprocess
@@ -263,6 +264,12 @@ def scan_sessions(
     if not sessions_dir.exists():
         return
 
+    # Evict state keys for session files that no longer exist on disk
+    existing = {p.name for p in sessions_dir.glob("*.jsonl")}
+    stale = [k for k in list(state["files"]) if k not in existing]
+    for k in stale:
+        del state["files"][k]
+
     for jsonl_path in sorted(sessions_dir.glob("*.jsonl")):
         fname = jsonl_path.name
         offset = state["files"].get(fname, {}).get("offset", 0)
@@ -364,7 +371,11 @@ def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
-        handlers=[logging.FileHandler(log_dir / "podcast-watcher.log")],
+        handlers=[logging.handlers.RotatingFileHandler(
+            log_dir / "podcast-watcher.log",
+            maxBytes=5 * 1024 * 1024,  # 5 MB
+            backupCount=3,
+        )],
     )
     log = logging.getLogger("podcast-watcher")
     log.info(
