@@ -32,6 +32,7 @@ Read the user's message and identify which intent applies:
 | 1 — Specific episode | "summarize Peter Attia episode 224", "give me a summary of this URL: ..." |
 | 2 — Topic search | "find a recent Huberman episode on the vagus nerve", "any Attia episodes on sleep?" |
 | 3 — Re-summarize / extend | "give me more detail on that episode", "longer summary of X", "short version of Y" |
+| 3b — Style + depth override | "summarize X with deep science style", "re-run #607 extended depth science format", "use deep_science and save to health" |
 | 4 — Add / remove podcast | "add podcast X", "stop monitoring Y", "just get one episode from Z", "monitor this feed" |
 | 5 — Style correction | "that summary was too short", "use science format for Attia", "give more detail on Huberman" |
 | 6 — Health store override | "add that episode to health store", "that Hunt Backcountry episode was health-related" |
@@ -114,6 +115,56 @@ exec: bash /home/openclaw/.openclaw/workspace/skills/podcast-summary/scripts/pod
 ```
 
 Tell the user: "Extended summary queued — it will be in your email shortly."
+
+---
+
+## Intent 3b — Style + Depth Override
+
+**Trigger:** User asks to summarize or re-run an episode and specifies a style ("deep science",
+"science format", "deep_science"), depth ("extended", "more detail"), Whisper ("re-transcribe",
+"use Whisper"), or health store ("save to health", "health-related").
+
+Parse the user's message for these modifiers:
+
+| User says | Flag to add |
+|-----------|-------------|
+| "deep science", "science format", "deep_science" | `--style deep_science` |
+| "hunting format", "hunting_outdoor" | `--style hunting_outdoor` |
+| "interview format", "long form" | `--style long_form_interview` |
+| "extended", "more detail", "longer" | `--depth extended` |
+| "re-transcribe", "use Whisper", "force Whisper" | `--strategy fetch_openai_whisper show_notes` |
+| "save to health", "health-related", "add to health" | `--save-to-health` |
+
+### STEP 1 — Log the request (exec, mandatory)
+
+```
+exec: bash /home/openclaw/.openclaw/workspace/skills/podcast-summary/scripts/podcast-log.sh on_demand_start episode="{id}" strategy="style_override"
+```
+
+### STEP 2 — Run on_demand.py with parsed flags (exec, mandatory)
+
+Build the command from the flags parsed above. Example for "summarize Beyond the Kill #607 extended depth deep science style save to health":
+
+```
+exec: python3 /home/openclaw/.openclaw/workspace/skills/podcast-summary/scripts/on_demand.py \
+  --query "Beyond the Kill #607" \
+  --agent sample-agent \
+  --depth extended \
+  --style deep_science \
+  --save-to-health
+```
+
+Only include flags that the user actually requested. Omit `--style` if no style was specified.
+Omit `--save-to-health` if the user did not mention health store.
+Omit `--strategy` unless the user explicitly asked to re-transcribe with Whisper.
+
+### STEP 3 — Log completion and confirm to user (exec + reply, mandatory)
+
+```
+exec: bash /home/openclaw/.openclaw/workspace/skills/podcast-summary/scripts/podcast-log.sh on_demand_done episode="{id}" strategy="style_override"
+```
+
+Tell the user: "Re-running [Episode] with [style] format / extended depth — full summary coming to your email."
 
 ---
 
