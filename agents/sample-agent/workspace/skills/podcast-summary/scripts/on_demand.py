@@ -549,6 +549,25 @@ Examples:
         default="standard",
         help="Summary depth: standard (default) or extended for more detail.",
     )
+    parser.add_argument(
+        "--style",
+        metavar="STYLE",
+        default=None,
+        help="Override summary style (e.g. deep_science, long_form_interview, hunting_outdoor).",
+    )
+    parser.add_argument(
+        "--strategy",
+        metavar="STRATEGY",
+        nargs="+",
+        default=None,
+        help="Override transcript strategy (e.g. fetch_openai_whisper show_notes).",
+    )
+    parser.add_argument(
+        "--save-to-health",
+        action="store_true",
+        default=False,
+        help="Save to health_knowledge.json regardless of the feed's health_tier setting.",
+    )
     args = parser.parse_args()
 
     # Dedup: if another on_demand.py is already running for the same episode,
@@ -565,7 +584,14 @@ Examples:
         sys.exit(0)
 
     try:
-        result = run(args.query, agent_name=args.agent, depth=args.depth)
+        result = run(
+            args.query,
+            agent_name=args.agent,
+            depth=args.depth,
+            strategy_override=args.strategy,
+            save_to_health=args.save_to_health,
+            summary_style_override=args.style,
+        )
     finally:
         try:
             _lock_path.unlink()

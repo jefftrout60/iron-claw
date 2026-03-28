@@ -191,7 +191,7 @@ def send_digest(
         date_str = today.strftime("%a %b %-d")  # e.g. "Sun Mar 22"
         n = len(episodes)
         plural = "s" if n != 1 else ""
-        subject = f"\U0001f3a7 Podcast Digest \u2014 {n} new episode{plural} \u00b7 {date_str}"
+        subject = f"\U0001f3a7 Podcast Digest \u2014 {n} new episode{plural} \u00b7 {date_str} #podcasts"
 
     send_email_path = _find_send_email()
 
