@@ -62,17 +62,29 @@ def _get_smtp_credentials() -> tuple:
 
 def _delete_from_sent(from_email: str, password: str, subject: str) -> None:
     """Connect via IMAP and delete the just-sent message from Gmail Sent folder."""
+    import email as email_lib
     try:
         mail = imaplib.IMAP4_SSL("imap.gmail.com")
         mail.login(from_email, password)
         mail.select('"[Gmail]/Sent Mail"')
-        # Search for messages with this subject sent today
+        # Search by date only — IMAP SUBJECT search breaks on Unicode/emoji subjects.
+        # Fetch headers for today's messages and match subject in Python instead.
         from datetime import date
         today = date.today().strftime("%d-%b-%Y")
-        escaped = subject.replace('"', '\\"')
-        _, msg_ids = mail.search(None, f'(SINCE "{today}" SUBJECT "{escaped}")')
+        _, msg_ids = mail.search(None, f'(SINCE "{today}")')
         for msg_id in msg_ids[0].split():
-            mail.store(msg_id, "+FLAGS", "\\Deleted")
+            _, data = mail.fetch(msg_id, "(BODY[HEADER.FIELDS (SUBJECT)])")
+            if not data or not data[0]:
+                continue
+            raw_header = data[0][1] if isinstance(data[0], tuple) else b""
+            parsed = email_lib.message_from_bytes(raw_header)
+            decoded_subject = email_lib.header.decode_header(parsed.get("Subject", ""))
+            msg_subject = "".join(
+                part.decode(enc or "utf-8") if isinstance(part, bytes) else part
+                for part, enc in decoded_subject
+            )
+            if msg_subject.strip() == subject.strip():
+                mail.store(msg_id, "+FLAGS", "\\Deleted")
         mail.expunge()
         mail.logout()
     except Exception:
