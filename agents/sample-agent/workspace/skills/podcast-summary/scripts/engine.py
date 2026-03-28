@@ -574,6 +574,17 @@ Examples:
     # ------------------------------------------------------------------
     # 5. Write processing_status.json
     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # 5a. Prune episodes.json (30d summaries, 90d metadata)
+    # ------------------------------------------------------------------
+    v = _get_vault_module()
+    episodes_path = v.get_vault_path("episodes.json")
+    episodes_data = v.load_vault(episodes_path)
+    episodes_data, stripped, removed = v.prune_episodes(episodes_data)
+    if stripped or removed:
+        v.save_vault(episodes_path, episodes_data)
+        print(f"[engine] Pruned episodes.json: {stripped} summaries stripped, {removed} episodes removed.")
+
     show_ids = list({ep.get("show_id", "") for ep in processed})
     status = {
         "version": 1,

@@ -11,6 +11,7 @@ same relative structure works on both sides of the volume mount.
 import json
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # podcast_vault/ is one level up from scripts/
@@ -82,6 +83,43 @@ def save_vault(file_path, data: dict) -> None:
         os.fsync(f.fileno())
 
     os.replace(tmp_path, file_path)
+
+
+def prune_episodes(data: dict, summary_days: int = 30, metadata_days: int = 90) -> tuple[dict, int, int]:
+    """
+    Prune episodes.json in place:
+      - Episodes processed within summary_days: kept as-is (full summary).
+      - Episodes processed between summary_days and metadata_days: summary/
+        summary_extended fields stripped, metadata kept.
+      - Episodes (processed or unprocessed) older than metadata_days: removed.
+
+    Uses processed_at if present, otherwise pub_date for age calculation.
+    Returns (pruned_data, summaries_stripped, episodes_removed).
+    """
+    now = datetime.now(tz=timezone.utc)
+    summary_cutoff = (now - timedelta(days=summary_days)).date().isoformat()
+    metadata_cutoff = (now - timedelta(days=metadata_days)).date().isoformat()
+
+    kept = []
+    summaries_stripped = 0
+    episodes_removed = 0
+
+    for ep in data.get("episodes", []):
+        age_key = (ep.get("processed_at") or ep.get("pub_date") or "")[:10]
+
+        if age_key < metadata_cutoff:
+            episodes_removed += 1
+            continue
+
+        if age_key < summary_cutoff:
+            if "summary" in ep or "summary_extended" in ep:
+                ep = {k: v for k, v in ep.items() if k not in ("summary", "summary_extended")}
+                summaries_stripped += 1
+
+        kept.append(ep)
+
+    data["episodes"] = kept
+    return data, summaries_stripped, episodes_removed
 
 
 def _empty_schema(filename: str) -> dict:
