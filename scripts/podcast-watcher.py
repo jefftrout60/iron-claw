@@ -34,11 +34,13 @@ INTENT_TRIGGERS = frozenset({
     "summaries", "podcast", "listen", "transcrib",
 })
 
-# Internal messages to skip (learning bridge payloads, heartbeat telemetry)
+# Internal messages to skip (learning bridge payloads, heartbeat telemetry, cron events)
 SKIP_PHRASES = (
     "Evaluate this completed run telemetry",
     "Return compact JSON only",
     "embedded run done",
+    "Morning podcast briefing",
+    "processing_status.json",
 )
 
 # ── Path resolution (mirrors lib.sh) ─────────────────────────────────────────
