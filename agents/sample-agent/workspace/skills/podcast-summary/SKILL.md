@@ -134,6 +134,7 @@ Parse the user's message for these modifiers:
 | "extended", "more detail", "longer" | `--depth extended` |
 | "re-transcribe", "use Whisper", "force Whisper" | `--strategy fetch_openai_whisper show_notes` |
 | "save to health", "health-related", "add to health" | `--save-to-health` |
+| "re-run" (any re-run request) | `--strategy fetch_openai_whisper show_notes` (always — re-runs imply a fresh transcript) |
 
 ### STEP 1 — Log the request (exec, mandatory)
 
