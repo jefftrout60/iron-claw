@@ -198,6 +198,14 @@ def save_state(state_path: Path, state: dict) -> None:
 
 # ── Docker exec ───────────────────────────────────────────────────────────────
 
+INTENT_3B_PHRASES = (
+    "deep science", "deep_science", "science format",
+    "extended depth", "save to health", "health-related",
+    "re-run", "re-transcribe", "force whisper",
+    "hunting format", "interview format", "long form",
+)
+
+
 def fire_on_demand(query: str, container: str, agent_name: str,
                    log: logging.Logger) -> None:
     """Run on_demand.py inside the container. Blocks until complete (runs in thread)."""
@@ -209,6 +217,7 @@ def fire_on_demand(query: str, container: str, agent_name: str,
         "python3", on_demand,
         "--query", query,
         "--agent", agent_name,
+        "--strategy", "fetch_openai_whisper", "show_notes",
     ]
     log.info("on_demand start: query=%r", query[:100])
     try:
@@ -316,6 +325,12 @@ def scan_sessions(
                     if not text:
                         continue
                     if any(phrase in text for phrase in SKIP_PHRASES):
+                        continue
+
+                    # Skip Intent 3b messages (style/depth overrides) — the agent
+                    # handles these directly; watcher firing causes duplicate emails.
+                    lower_text = text.lower()
+                    if any(phrase in lower_text for phrase in INTENT_3B_PHRASES):
                         continue
 
                     # Strip OpenClaw's Telegram metadata wrapper; use only
