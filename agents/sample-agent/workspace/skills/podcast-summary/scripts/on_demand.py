@@ -98,14 +98,20 @@ def _episode_number_match(query: str, title: str) -> bool:
 
     number = m.group(1)
 
-    # Search for that number in the title using common patterns
+    # Search for that number in the title using common patterns.
+    # Prefer explicit episode-number patterns; only fall back to bare word match
+    # when the number appears at the START of the title (e.g. "100: ...") to
+    # avoid false matches on numbers embedded in episode content (years, $amounts).
     title_lower = title.lower()
-    patterns = [
+    explicit_patterns = [
         rf"#{number}\b",
         rf"\bep(?:isode)?\.?\s+{number}\b",
-        rf"\b{number}\b",
     ]
-    return any(re.search(p, title_lower, re.IGNORECASE) for p in patterns)
+    if any(re.search(p, title_lower, re.IGNORECASE) for p in explicit_patterns):
+        return True
+    # Bare number only matches if it appears at the very start of the title
+    # (e.g. "100: How I Built This" or "100 — Tim's story")
+    return bool(re.match(rf"^{number}\b", title_lower))
 
 
 # ---------------------------------------------------------------------------
