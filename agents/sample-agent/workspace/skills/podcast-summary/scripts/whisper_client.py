@@ -288,8 +288,10 @@ def _split_audio_chunks(audio_path: Path) -> list[Path]:
     chunk_dir.mkdir(exist_ok=True)
     chunk_pattern = str(chunk_dir / "chunk_%03d.mp3")
 
+    # Use full path so ffmpeg is found when running under cron's minimal PATH
+    ffmpeg_bin = shutil.which("ffmpeg") or "/usr/local/bin/ffmpeg"
     cmd = [
-        "ffmpeg", "-i", str(audio_path),
+        ffmpeg_bin, "-i", str(audio_path),
         "-f", "segment",
         "-segment_time", str(CHUNK_DURATION_SECS),
         "-c", "copy",
@@ -401,6 +403,11 @@ def transcribe(
         env_url = os.environ.get("WHISPER_BRIDGE_URL") or env.get("WHISPER_BRIDGE_URL", "")
         if env_url:
             whisper_url = env_url.rstrip("/")
+
+    # Inside Docker, 127.0.0.1 points to the container itself, not the host.
+    # Remap to host.docker.internal so the container can reach the host whisper server.
+    if os.path.exists("/.dockerenv") and "127.0.0.1" in whisper_url:
+        whisper_url = whisper_url.replace("127.0.0.1", "host.docker.internal")
 
     # 1. Download audio
     audio_path = _download_audio(audio_url)
