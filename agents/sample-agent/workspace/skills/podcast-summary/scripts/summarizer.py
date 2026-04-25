@@ -213,6 +213,16 @@ def _build_prompt(
         "Do not refer to the framework by name alone without enumerating its parts."
     )
 
+    substance_suffix = (
+        "\n\nIMPORTANT: Never reference something without stating what it actually is. "
+        "If a product, technique, gear item, book, study, concept, or story is introduced, "
+        "mentioned, or discussed — name it and describe it. Do not write phrases like "
+        "'she introduces a product', 'they discuss a technique', 'he shares a story', or "
+        "'the conversation shifts to X' without saying what the product, technique, story, "
+        "or X actually is. If you cannot identify the specific details from the transcript, "
+        "omit the reference entirely rather than gesturing at it vaguely."
+    )
+
     show_lower = show.lower()
     show_extra = next(
         (instr for key, instr in _SHOW_EXTRA_INSTRUCTIONS.items() if key in show_lower),
@@ -252,7 +262,7 @@ def _build_prompt(
             "(4) any studies or experts cited. "
             f"Be specific and concrete — avoid vague generalities.{specificity}"
             f"\n\nShow: {show}\nEpisode: {title}\nTranscript:\n{transcript}"
-            + show_extra + topic_map_section + list_suffix + extended_suffix + qa_suffix
+            + show_extra + topic_map_section + list_suffix + substance_suffix + extended_suffix + qa_suffix
         )
 
     elif summary_style == "long_form_interview":
@@ -266,7 +276,7 @@ def _build_prompt(
             "write 2-3 paragraphs. "
             "If the content is lighter (casual conversation, entertainment), write 1 tight paragraph."
             f"\n\nShow: {show}\nEpisode: {title}\nTranscript:\n{transcript}"
-            + show_extra + topic_map_section + list_suffix + extended_suffix + qa_suffix
+            + show_extra + topic_map_section + list_suffix + substance_suffix + extended_suffix + qa_suffix
         )
 
     elif summary_style == "commentary":
@@ -282,7 +292,7 @@ def _build_prompt(
                 "(5) practical implications, calls to action, or conclusions drawn. "
                 "Be thorough — this is meant as a detailed reference summary, not a brief overview."
                 f"\n\nShow: {show}\nEpisode: {title}\nTranscript:\n{transcript}"
-                + show_extra + topic_map_section + list_suffix + extended_suffix + qa_suffix
+                + show_extra + topic_map_section + list_suffix + substance_suffix + extended_suffix + qa_suffix
             )
         else:
             user = (
@@ -290,7 +300,7 @@ def _build_prompt(
                 "in 1-2 paragraphs. "
                 "Focus on what was actually argued, not just what was discussed."
                 f"\n\nShow: {show}\nEpisode: {title}\nTranscript:\n{transcript}"
-                + show_extra + topic_map_section + list_suffix + extended_suffix + qa_suffix
+                + show_extra + topic_map_section + list_suffix + substance_suffix + extended_suffix + qa_suffix
             )
 
     elif summary_style == "hunting_outdoor":
@@ -303,7 +313,7 @@ def _build_prompt(
             "Archery/Shooting, Fitness & Training, Guest Profile, Conservation, Trip Planning. "
             "Only include categories that were meaningfully discussed."
             f"\n\nShow: {show}\nEpisode: {title}\nTranscript:\n{transcript}"
-            + show_extra + topic_map_section + list_suffix + extended_suffix + qa_suffix
+            + show_extra + topic_map_section + list_suffix + substance_suffix + extended_suffix + qa_suffix
         )
 
     elif summary_style == "orvis_fly_fishing":
@@ -319,7 +329,7 @@ def _build_prompt(
             "Summarize the guest interview in 3-6 sentences covering: who the guest is, "
             "the main topics discussed, and the most useful or actionable advice shared."
             f"\n\nShow: {show}\nEpisode: {title}\nTranscript:\n{transcript}"
-            + show_extra + topic_map_section + list_suffix + extended_suffix + qa_suffix
+            + show_extra + topic_map_section + list_suffix + substance_suffix + extended_suffix + qa_suffix
         )
 
     elif summary_style == "meateater":
@@ -335,7 +345,7 @@ def _build_prompt(
                 "and memorable moments or takeaways. "
                 "Write it as a narrative summary a reader could use to decide whether to listen."
                 f"\n\nShow: {show}\nEpisode: {title}\nTranscript:\n{transcript}"
-                + show_extra + topic_map_section + list_suffix + extended_suffix + qa_suffix
+                + show_extra + topic_map_section + list_suffix + substance_suffix + extended_suffix + qa_suffix
             )
         else:
             user = (
@@ -343,7 +353,7 @@ def _build_prompt(
                 "Cover: who the guest is, the main stories and topics discussed, "
                 "and any notable takeaways or memorable moments."
                 f"\n\nShow: {show}\nEpisode: {title}\nTranscript:\n{transcript}"
-                + show_extra + topic_map_section + list_suffix + extended_suffix + qa_suffix
+                + show_extra + topic_map_section + list_suffix + substance_suffix + extended_suffix + qa_suffix
             )
 
     elif summary_style == "devotional":
@@ -353,7 +363,7 @@ def _build_prompt(
             "the scripture passage discussed, "
             "the main spiritual insight or application taught."
             f"\n\nShow: {show}\nEpisode: {title}\nTranscript:\n{transcript}"
-            + show_extra + topic_map_section + list_suffix + extended_suffix + qa_suffix
+            + show_extra + topic_map_section + list_suffix + substance_suffix + extended_suffix + qa_suffix
         )
 
     else:
@@ -362,7 +372,7 @@ def _build_prompt(
         user = (
             f"Summarize this podcast episode concisely."
             f"\n\nShow: {show}\nEpisode: {title}\nTranscript:\n{transcript}"
-            + show_extra + topic_map_section + list_suffix + extended_suffix + qa_suffix
+            + show_extra + topic_map_section + list_suffix + substance_suffix + extended_suffix + qa_suffix
         )
 
     return system, user

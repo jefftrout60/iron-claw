@@ -3,10 +3,10 @@
   "jobs": [
     {
       "name": "podcast-morning-nudge",
-      "schedule": {"kind": "cron", "cron": "0 6 * * *"},
+      "schedule": {"kind": "cron", "cron": "0 12 * * *"},
       "payload": {
         "kind": "systemEvent",
-        "text": "Morning podcast briefing. Read the file at workspace/skills/podcast-summary/podcast_vault/processing_status.json using exec. Then send me a brief Telegram message: if status is 'complete', say '🎧 Podcast Digest ready — [episodes_processed] episodes processed overnight from [shows list]. Check your email for summaries.'; if status is 'in_progress', say '⏳ Podcast processing still running... check back soon.'; if run_date is not today or status is 'never_run', say '🔇 No new podcasts were processed last night.' Keep it to 1-2 sentences."
+        "text": "Morning podcast briefing. Read the file at workspace/skills/podcast-summary/podcast_vault/processing_status.json using exec. Extract the run_date field (format: YYYY-MM-DD). Compare it to today's date from the current time in this message. IMPORTANT: If run_date does not exactly match today's date, you MUST send '🔇 No new podcasts were processed last night.' — do not report any episode counts from a previous day. Only if run_date exactly matches today's date: if status is 'complete', say '🎧 Podcast Digest ready — [episodes_processed] episodes processed overnight from [shows list]. Check your email for summaries.'; if status is 'in_progress', say '⏳ Podcast processing still running... check back soon.'; if status is 'never_run', say '🔇 No new podcasts were processed last night.' Keep it to 1-2 sentences."
       },
       "sessionTarget": "main",
       "enabled": true

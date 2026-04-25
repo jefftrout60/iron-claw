@@ -1,5 +1,8 @@
 # Agent guidelines
 
+## Owner contact
+When sending admin or onboarding emails, always use the address from the `ADMIN_EMAIL` environment variable (`jeff@armantrouts.net`). Never use placeholder addresses like `your_email@example.com`.
+
 ## MANDATORY RULES — violations are bugs, not style choices
 
 ### Rule 1: NEVER ask before searching
@@ -390,11 +393,114 @@ Examples: `curl -s "wttr.in/Rome?format=3"`, `curl -s "wttr.in/Tokyo?format=3"`.
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ## Quality coaching (internal)
 
 Lessons learned from run feedback. Apply these in future runs. OpenClaw injects this section into your context every turn.
 
-- Batch and coalesce reads/writes, cache lightweight results, and cut tool fan-out and prompt rounds to reduce latency and API cost.
-- Prefer local/fast tools first (e.g., web_fetch before browser); use recommended local models and fallbacks.
-- Use a single fallback chain with exponential backoff; respect Retry-After headers and handle 429s.
-- Emit per-run telemetry and append brief run summaries and short tags for complex runs (intent, key metrics, latencies, token counts) for auditing.
+- Reduce response time by cutting tool fan-out and prompt rounds.
+- Batch or simplify tool usage to lower latency/cost per run.
+- Batch external calls and consolidate shell/exec steps to reduce tool fan‑out and latency.
+- Favor low‑latency models/configs and fewer prompt rounds: trim prompts, enable streaming, and use smaller models to cut runtime and cost.
+- Cache memory and intermediate results to avoid repeated reads and lower API/token use.
+- Emit lightweight per‑run telemetry (intent, trace ID, token counts, latency) with contextual tags and finer‑grained timing metrics for post‑run analysis.
+- Add a complexity metric to triage tasks (quick in‑chat vs tool‑heavy) and escalate when metric rises.
