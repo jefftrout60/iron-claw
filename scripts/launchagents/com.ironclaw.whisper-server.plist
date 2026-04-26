@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ironclaw.whisper-server</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/python3.13</string>
+        <string>/Users/jeff/ironclaw/scripts/faster-whisper-server.py</string>
+        <string>--port</string>
+        <string>18797</string>
+        <string>--model</string>
+        <string>large-v3</string>
+    </array>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/faster-whisper-server.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/faster-whisper-server.log</string>
+</dict>
+</plist>
