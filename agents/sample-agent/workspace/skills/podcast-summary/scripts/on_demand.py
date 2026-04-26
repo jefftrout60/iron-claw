@@ -572,7 +572,7 @@ Examples:
         "--save-to-health",
         action="store_true",
         default=False,
-        help="Save to health_knowledge.json regardless of the feed's health_tier setting.",
+        help="Save to health.db regardless of the feed's health_tier setting.",
     )
     args = parser.parse_args()
 

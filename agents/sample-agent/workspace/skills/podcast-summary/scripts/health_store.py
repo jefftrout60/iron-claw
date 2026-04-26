@@ -143,21 +143,6 @@ def load_all() -> list[dict]:
     return result
 
 
-def find_by_show(show: str) -> list[dict]:
-    """Return all entries whose show name contains the given string (case-insensitive), newest first."""
-    conn = health_db.get_connection()
-    rows = conn.execute(
-        "SELECT * FROM health_knowledge WHERE lower(show) LIKE ? ORDER BY date DESC",
-        (f"%{show.lower()}%",),
-    ).fetchall()
-    conn.close()
-    result = []
-    for row in rows:
-        d = dict(row)
-        d["topics"] = json.loads(d.get("topics") or "[]")
-        result.append(d)
-    return result
-
 
 def _cli_test() -> None:
     entries = load_all()

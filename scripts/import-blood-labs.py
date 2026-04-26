@@ -181,8 +181,8 @@ def run(filepath: str, dry_run: bool) -> None:
                 marker_id,
                 row["date"],
                 row["value"],
-                row["reference_low"] if row["reference_low"] is not None and str(row["reference_low"]) != "nan" else None,
-                row["reference_high"] if row["reference_high"] is not None and str(row["reference_high"]) != "nan" else None,
+                row["reference_low"] if row["reference_low"] is not None else None,
+                row["reference_high"] if row["reference_high"] is not None else None,
                 row["source_sheet"],
             ),
         )

@@ -90,10 +90,6 @@ def _migrate(entries: list[dict]) -> tuple[int, int]:
 
     conn.commit()
 
-    # Rebuild the FTS index after bulk insert — triggers kept it consistent
-    # row-by-row, but a single rebuild is cleaner and confirms index health.
-    conn.execute("INSERT INTO health_knowledge_fts(health_knowledge_fts) VALUES('rebuild')")
-    conn.commit()
     conn.close()
 
     return inserted, skipped

@@ -14,7 +14,6 @@ Usage:
 from __future__ import annotations
 
 import sqlite3
-import sys
 from pathlib import Path
 
 # podcast_vault/ is one level up from scripts/ — mirrors vault.py:18
@@ -238,18 +237,3 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def _check_fts5() -> None:
-    """Warn to stderr if FTS5 is unavailable in the current SQLite build."""
-    try:
-        conn = sqlite3.connect(":memory:")
-        conn.execute("SELECT fts5('test')")
-        conn.close()
-    except sqlite3.OperationalError:
-        print(
-            "[health_db] WARNING: FTS5 is not available in this SQLite build. "
-            "Full-text search on health_knowledge will not work.",
-            file=sys.stderr,
-        )
-
-
-_check_fts5()
