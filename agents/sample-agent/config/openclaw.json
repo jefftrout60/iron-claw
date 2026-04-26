@@ -275,7 +275,7 @@
       ]
     },
     "telegram": {
-      "enabled": true,
+      "enabled": false,
       "dmPolicy": "allowlist",
       "allowFrom": [
         "8333403651"
@@ -297,7 +297,7 @@
         "enabled": true
       },
       "telegram": {
-        "enabled": true
+        "enabled": false
       }
     }
   },
