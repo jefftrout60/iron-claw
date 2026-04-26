@@ -166,6 +166,8 @@ def sync_daily_summaries(conn, headers: dict, start: str, end: str) -> None:
         # daily_sleep
         for rec in fetch_all("daily_sleep", chunk_start, chunk_end, headers):
             day = rec.get("day", "")
+            if not day:
+                continue
             score = rec.get("score")
             contribs = rec.get("contributors", {})
             merge(day, sleep_score=score,
