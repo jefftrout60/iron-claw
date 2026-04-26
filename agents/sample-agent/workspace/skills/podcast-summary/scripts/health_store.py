@@ -9,11 +9,9 @@ import time
 import urllib.request
 from pathlib import Path
 
-# vault.py is in the same directory
+# health_db.py is in the same directory
 sys.path.insert(0, str(Path(__file__).parent))
-from vault import get_vault_path, load_vault, save_vault
-
-_KNOWLEDGE_FILE = "health_knowledge.json"
+import health_db
 
 
 def slugify(text: str) -> str:
@@ -75,8 +73,9 @@ def extract_topics(summary: str, api_key: str, model: str) -> list[str]:
 
 def append_entry(entry_data: dict, api_key: str = "", model: str = "gpt-4o-mini") -> dict:
     """
-    Build a complete entry, append it to health_knowledge.json, and return it.
+    Build a complete entry, insert it into health.db, and return it.
     Topics are extracted via the OpenAI API when api_key is provided.
+    Returns None if a duplicate entry (same show + title + date) already exists.
     """
     topics = extract_topics(entry_data["summary"], api_key, model)
 
@@ -99,43 +98,70 @@ def append_entry(entry_data: dict, api_key: str = "", model: str = "gpt-4o-mini"
         "tagged_by": entry_data.get("tagged_by", "auto"),
     }
 
-    vault_path = get_vault_path(_KNOWLEDGE_FILE)
-    data = load_vault(vault_path)
+    conn = health_db.get_connection()
+    cursor = conn.execute(
+        """INSERT OR IGNORE INTO health_knowledge
+             (id, show, episode_title, episode_number, date, source,
+              source_quality, topics, summary, tagged_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            entry["id"],
+            entry["show"],
+            entry["episode_title"],
+            entry["episode_number"],
+            entry["date"],
+            entry["source"],
+            entry["source_quality"],
+            json.dumps(entry["topics"]),
+            entry["summary"],
+            entry["tagged_by"],
+        ),
+    )
+    if cursor.rowcount == 0:
+        print(
+            f"[health_store] Skipping duplicate: {entry['episode_title']!r} ({entry['date']})",
+            file=sys.stderr,
+        )
+        conn.close()
+        return None
 
-    # Dedup: skip if an entry with the same show + title + date already exists.
-    # Keyed on stable fields so re-runs with different LLM summaries don't duplicate.
-    new_key = (entry["show"], entry["episode_title"], entry["date"])
-    for existing in data.get("entries", []):
-        if (existing.get("show"), existing.get("episode_title"), existing.get("date")) == new_key:
-            print(
-                f"[health_store] Skipping duplicate: {entry['episode_title']!r} ({entry['date']})",
-                file=sys.stderr,
-            )
-            return None
-
-    data["entries"].append(entry)
-    save_vault(vault_path, data)
-
+    conn.commit()
+    conn.close()
     return entry
 
 
 def load_all() -> list[dict]:
     """Return all entries sorted by date descending (newest first)."""
-    vault_path = get_vault_path(_KNOWLEDGE_FILE)
-    data = load_vault(vault_path)
-    return sorted(data.get("entries", []), key=lambda e: e.get("date", ""), reverse=True)
+    conn = health_db.get_connection()
+    rows = conn.execute("SELECT * FROM health_knowledge ORDER BY date DESC").fetchall()
+    conn.close()
+    result = []
+    for row in rows:
+        d = dict(row)
+        d["topics"] = json.loads(d.get("topics") or "[]")
+        result.append(d)
+    return result
 
 
 def find_by_show(show: str) -> list[dict]:
     """Return all entries whose show name contains the given string (case-insensitive), newest first."""
-    needle = show.lower()
-    matches = [e for e in load_all() if needle in e.get("show", "").lower()]
-    return matches  # load_all() already returns sorted
+    conn = health_db.get_connection()
+    rows = conn.execute(
+        "SELECT * FROM health_knowledge WHERE lower(show) LIKE ? ORDER BY date DESC",
+        (f"%{show.lower()}%",),
+    ).fetchall()
+    conn.close()
+    result = []
+    for row in rows:
+        d = dict(row)
+        d["topics"] = json.loads(d.get("topics") or "[]")
+        result.append(d)
+    return result
 
 
 def _cli_test() -> None:
     entries = load_all()
-    print(f"health_knowledge.json — {len(entries)} entry(s)")
+    print(f"health_knowledge (SQLite) — {len(entries)} entry(s)")
     if entries:
         print("First entry:")
         print(json.dumps(entries[0], indent=2))
@@ -143,7 +169,7 @@ def _cli_test() -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Health knowledge store CLI")
-    parser.add_argument("--test", action="store_true", help="Print current contents of health_knowledge.json")
+    parser.add_argument("--test", action="store_true", help="Print current contents of health knowledge DB")
     args = parser.parse_args()
 
     if args.test:

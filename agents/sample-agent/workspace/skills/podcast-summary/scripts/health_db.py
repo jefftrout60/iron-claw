@@ -11,6 +11,8 @@ Usage:
     conn = health_db.get_connection()   # opens / initialises DB, returns sqlite3.Connection
 """
 
+from __future__ import annotations
+
 import sqlite3
 import sys
 from pathlib import Path
