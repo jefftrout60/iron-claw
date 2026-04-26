@@ -190,13 +190,9 @@ def sync_daily_summaries(conn, headers: dict, start: str, end: str) -> None:
                   active_calories=rec.get("active_calories"),
                   total_calories=rec.get("total_calories"))
 
-        # daily_hrv
-        for rec in fetch_all("daily_hrv", chunk_start, chunk_end, headers):
-            day = rec.get("day", "")
-            merge(day, avg_hrv_rmssd=rec.get("night_average"))
-
-        # spo2
-        for rec in fetch_all("spo2", chunk_start, chunk_end, headers):
+        # daily_spo2 (note: daily_hrv endpoint doesn't exist in v2 API;
+        # HRV is already captured via sleep sessions avg_hrv field)
+        for rec in fetch_all("daily_spo2", chunk_start, chunk_end, headers):
             day = rec.get("day", "")
             spo2 = rec.get("spo2_percentage", {})
             merge(day,
