@@ -88,6 +88,10 @@ agents/*/workspace/camera/capture_*.jpg
 agents/*/workspace/camera/_capture_tmp.jpg
 agents/*/workspace/camera/service.log
 
+# macOS system files
+.DS_Store
+**/.DS_Store
+
 node_modules/
 
 # Python bytecode and cache (do not commit)
