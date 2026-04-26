@@ -1,0 +1,81 @@
+{
+  "version": "1.1",
+  "timestamp": "2026-04-26-124806",
+  "branch_name": "main",
+  "task_name": "health-db",
+  "session_number": 1,
+  "progress_update": {
+    "summary": "We scoped and planned the Unified Health SQLite Database from scratch. Ran /spectre:scope to define three pillars (podcast health knowledge, blood labs, Oura Ring), then /spectre:plan to produce a full comprehensive implementation plan with 4 phases and 26 sub-tasks. Along the way we reorganized all project planning docs out of the ironclaw repo into ~/Code Projects/{Project Name}/ — Health DB, Podcast Feed, Kindle Highlights, and Ollama Bootstrap all have homes there now. Session ended with approved scope, approved plan, and a complete tasks.md ready for /spectre:execute.",
+    "goal": "Build health.db — a unified SQLite database replacing health_knowledge.json and adding blood lab history + Oura Ring biometrics. Success: cross-pillar query 'how has my A1c changed and what does Attia say about it' returns a meaningful answer.",
+    "accomplished": [
+      "Scoped three-pillar health DB (podcast knowledge + blood labs + Oura Ring) via /spectre:scope — scope.md saved to ~/Code Projects/Health DB/concepts/scope.md",
+      "Ran /spectre:plan: 4 parallel research agents (finder, analyst, patterns, web-research) produced comprehensive task_context.md; architectural options presented and Option A (swap-in place) selected",
+      "Generated full implementation plan (plan.md) with 4 phases, complete SQLite schema, Oura v2 API patterns, Excel unpivot approach, launchd plist design — approved by Jeff",
+      "Generated tasks.md with 26 sub-tasks, dependency analysis, sequential and 8-wave parallel execution strategies",
+      "Reorganized all project planning docs from ironclaw/docs/tasks/ into ~/Code Projects/ — committed removal from repo (c2d74b3); saved future-pillars roadmap and deferred features to memory"
+    ],
+    "now": "Session ended just after /spectre:handoff was invoked. Ready to start /spectre:execute on Phase 1 (Foundation) in the next session.",
+    "next_steps": [
+      "Run /spectre:execute to implement Phase 1: create health_db.py, migrate_health_knowledge.py, modify health_store.py, create health_store_cmd.py, retire health_knowledge.json",
+      "Phase 2 (blood labs) gated on Jeff providing the Excel file",
+      "Phase 3 (Oura) gated on Jeff obtaining PAT from https://cloud.ouraring.com/personal-access-tokens",
+      "After Phases 2+3, run Phase 4 cross-pillar validation query"
+    ],
+    "confidence": "high",
+    "constraints": [
+      "health_store.py public API (append_entry, load_all, find_by_show) must be preserved — engine.py and on_demand.py cannot change",
+      "DB lives at podcast_vault/health.db inside the mounted workspace — accessible from both host (python3.13) and container (python3)",
+      "All host scripts use /usr/local/bin/python3.13; deps installed via pip3.13",
+      "No jq in container — all JSON handling in skill scripts must use python3",
+      "FTS5 must be verified available in both host and container Python before implementing"
+    ],
+    "decisions": [
+      "Option A (swap-in place): health_store.py internals replaced with SQLite, public API unchanged — zero changes to callers",
+      "launchd oura sync uses StartCalendarInterval (batch/weekly) not KeepAlive (daemon) — different from whisper-server pattern",
+      "Blood lab import runs --dry-run first to handle unknown Excel layout quirks before committing",
+      "Jeff has Gen3 Oura ring — pull all endpoints including stress, resilience, VO2 max; handle 404s gracefully"
+    ],
+    "blockers": [
+      "Blood lab import blocked until Jeff provides the Excel file",
+      "Oura historical import blocked until Jeff obtains PAT from https://cloud.ouraring.com/personal-access-tokens"
+    ],
+    "open_questions": [],
+    "risks": [
+      "FTS5 may not be compiled into the container's Python sqlite3 — must verify before implementing triggers",
+      "Blood test Excel may have layout quirks (merged cells, non-standard headers) — --dry-run mode designed to surface these"
+    ]
+  },
+  "working_set": {
+    "key_files": [
+      "agents/sample-agent/workspace/skills/podcast-summary/scripts/health_store.py",
+      "agents/sample-agent/workspace/skills/podcast-summary/scripts/vault.py",
+      "agents/sample-agent/workspace/skills/podcast-summary/SKILL.md",
+      "scripts/launchagents/com.ironclaw.whisper-server.plist",
+      "scripts/faster-whisper-server.py",
+      "agents/sample-agent/workspace/skills/podcast-summary/podcast_vault/health_knowledge.json",
+      "/Users/jeff/Code Projects/Health DB/specs/plan.md",
+      "/Users/jeff/Code Projects/Health DB/specs/tasks.md",
+      "/Users/jeff/Code Projects/Health DB/task_context.md"
+    ],
+    "active_ids": [],
+    "recent_commands": [
+      "./scripts/compose-up.sh sample-agent -d",
+      "git rm -r docs/tasks/podcast-summary docs/tasks/boostrap-ollama-v2",
+      "python3 -c \"import json; d=json.load(open('...health_knowledge.json')); print(len(d['entries']))\""
+    ]
+  },
+  "context": {
+    "wip_state": "uncommitted",
+    "last_commit": "c2d74b3",
+    "wip_files": [
+      "agents/sample-agent/config/openclaw.json (M)",
+      "agents/sample-agent/workspace/AGENTS.md (M)",
+      "agents/sample-agent/workspace/MEMORY.md (M)",
+      "scripts/docker-compose.yml.tmpl (M)",
+      "agents/sample-agent/workspace/TODO.md (untracked)",
+      "agents/sample-agent/workspace/everett-weather-2026-04-25.json (untracked)",
+      "agents/sample-agent/workspace/stevensville-weather-2026-04-25.json (untracked)"
+    ],
+    "planning_docs_location": "~/Code Projects/Health DB/ (scope.md, plan.md, tasks.md, task_context.md)"
+  }
+}

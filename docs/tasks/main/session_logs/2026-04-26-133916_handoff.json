@@ -1,0 +1,81 @@
+{
+  "version": "1.1",
+  "timestamp": "2026-04-26-133916",
+  "branch_name": "main",
+  "task_name": "health-db",
+  "session_number": 2,
+  "continuity": {
+    "started": "2026-04-26",
+    "sessions_reviewed": 1,
+    "arc_goal": "Build unified Health SQLite database (health.db) with cross-pillar queries: podcast health knowledge + blood lab history + Oura Ring biometrics. Success: answer 'how has my ApoB changed and what does Attia say about it' meaningfully from integrated data."
+  },
+  "progress_update": {
+    "summary": "We completed the full Unified Health SQLite Database implementation. Phase 1 (foundation) was done in the previous session. This session we ran the full Oura historical import (3,565 daily summaries, 4,669 sleep sessions back to June 2016), imported the blood lab Excel file (1,171 rows, 117 markers, 24 years back to Oct 2002), installed the weekly Oura launchd sync (Monday 3am), and confirmed cross-pillar queries work. Along the way we fixed two bugs in oura-sync.py (wrong spo2 endpoint name, nullable contributors field), and discovered the Oura heartrate API only returns recent data — the 5.5 month gap before June 2016 is on Oura's API side. health.db is now live with all three pillars populated.",
+    "goal": "Build health.db — unified SQLite DB with podcast health knowledge + blood labs + Oura biometrics. Success: cross-pillar queries like 'how has my ApoB changed and what does Attia say about it' return meaningful answers.",
+    "accomplished": [
+      "Oura historical import complete: 3,565 daily summaries + 4,669 sleep sessions (Jun 2016 → today); heartrate API returns recent only (Oura limitation)",
+      "Blood lab Excel imported: 1,171 rows, 117 unique markers across 6 sheets (CBC, Metabolic, Hormones, Lipids, Thyroid, Misc), back to Oct 2002",
+      "Weekly Oura launchd sync installed: com.ironclaw.oura-sync.plist loaded, Monday 3am, incremental via sync_state table",
+      "Two oura-sync.py bugs fixed and committed: spo2→daily_spo2 endpoint name, nullable contributors fields using 'or {}' guard",
+      "Cross-pillar query validated: ApoB trend (92mg/dL 2020 → 45mg/dL 2025) + FTS search returning Attia lipid/cholesterol episodes",
+      "Oura PAT added to agents/sample-agent/.env (user rotated to new PAT after posting old one in chat)",
+      "Phase 1 foundation completed (S1): health_db.py, health_store.py swap to SQLite, health_store_cmd.py, retired health_knowledge.json"
+    ],
+    "now": "Session complete. All planned implementation work is done. User asked 'next steps?' — handoff being saved.",
+    "next_steps": [
+      "Build a health query skill or update SKILL.md to let the agent query health.db for cross-pillar questions",
+      "Add FTS search wrapper script (query health_knowledge_fts from exec) so the agent can search podcast knowledge",
+      "Revisit deferred features from memory: Oura context injection, embedding/vector search, pattern detection",
+      "Eventually add more data pillars: blood pressure, workouts, supplement list, visit summaries, weight/macros (roadmap in memory)"
+    ],
+    "confidence": "high",
+    "constraints": [
+      "health_store.py public API (append_entry, load_all, find_by_show) must be preserved — engine.py and on_demand.py cannot change",
+      "DB lives at podcast_vault/health.db inside the mounted workspace — accessible from both host (python3.13) and container (python3)",
+      "All host scripts use /usr/local/bin/python3.13; deps installed via pip3.13",
+      "No jq in container — all JSON handling in skill scripts must use python3",
+      "FTS5 must be verified available in both host and container Python before implementing",
+      "Oura heartrate API only returns recent data — historical intraday HR not available via v2 API",
+      "Oura API gap: Jan 1 – Jun 15 2016 not available via API (app shows it, API does not)",
+      "Blood lab Excel at ~/Documents/Fitness/BloodTest_Tracker.xlsx — re-run import script if file is updated",
+      "Weekly Oura sync runs Monday 3am via launchd; token in agents/sample-agent/.env"
+    ],
+    "decisions": [
+      "Option A (swap-in place): health_store.py internals replaced with SQLite, public API unchanged — zero changes to callers",
+      "launchd oura sync uses StartCalendarInterval (batch/weekly) not KeepAlive (daemon) — different from whisper-server pattern",
+      "Blood lab import runs --dry-run first to handle unknown Excel layout quirks before committing",
+      "Jeff has Gen3 Oura ring — pull all endpoints including stress, resilience, VO2 max; handle 404s gracefully",
+      "Oura heartrate 'missing' data is an API limitation — not fixable, accepted as-is",
+      "daily_spo2 is the correct Oura v2 endpoint (not spo2); daily_hrv endpoint doesn't exist (HRV via sleep sessions avg_hrv)",
+      "All planning docs now live in ~/Code Projects/{Project Name}/ — not inside the ironclaw repo"
+    ],
+    "blockers": [],
+    "open_questions": [],
+    "risks": [
+      "Oura PAT was briefly exposed in chat — user rotated it; new PAT in .env"
+    ]
+  },
+  "working_set": {
+    "key_files": [
+      "agents/sample-agent/workspace/skills/podcast-summary/scripts/health_db.py",
+      "agents/sample-agent/workspace/skills/podcast-summary/scripts/health_store.py",
+      "agents/sample-agent/workspace/skills/podcast-summary/scripts/health_store_cmd.py",
+      "scripts/oura-sync.py",
+      "scripts/import-blood-labs.py",
+      "scripts/launchagents/com.ironclaw.oura-sync.plist",
+      "/Users/jeff/Code Projects/Health DB/specs/tasks.md",
+      "/Users/jeff/Code Projects/Health DB/specs/plan.md"
+    ],
+    "active_ids": [],
+    "recent_commands": [
+      "python3.13 scripts/oura-sync.py --historical",
+      "python3.13 scripts/import-blood-labs.py --file ~/Documents/Fitness/BloodTest_Tracker.xlsx",
+      "launchctl load ~/Library/LaunchAgents/com.ironclaw.oura-sync.plist"
+    ]
+  },
+  "context": {
+    "wip_state": "uncommitted",
+    "last_commit": "87068b5",
+    "wip_note": "11 uncommitted files are pre-existing workspace files (openclaw.json, AGENTS.md, MEMORY.md, weather JSONs, TODO.md) — not related to health-db work"
+  }
+}

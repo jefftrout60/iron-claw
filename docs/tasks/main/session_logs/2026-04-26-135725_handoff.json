@@ -1,0 +1,68 @@
+{
+  "version": "1.1",
+  "timestamp": "2026-04-26-135725",
+  "branch_name": "main",
+  "task_name": "health-db",
+  "session_number": 3,
+  "progress_update": {
+    "summary": "We ran /spectre:clean and /spectre:test on the health-db feature. Clean removed 5 dead-code items (find_by_show, _check_fts5, stale help string, dead nan guards, redundant FTS rebuild) and committed them. Test dispatched 2 tester agents in parallel — 4 test files were written but not yet run or committed due to context window hitting 94%. Session saved mid-test-run.",
+    "goal": "health-db feature complete: SQLite DB with 3 pillars (health knowledge, blood labs, Oura) + tests",
+    "accomplished": [
+      "/spectre:clean complete: 5 dead-code items removed, committed as 0fb89cf",
+      "4 test files written by tester agents (NOT yet run or committed):",
+      "  - scripts/test_health_db.py (schema init, FTS5 triggers, connection PRAGMAs)",
+      "  - scripts/test_health_store.py (append_entry dedup, load_all sort/deserialize, topics)",
+      "  - scripts/test_health_store_cmd.py (episode lookup, missing summary, duplicate, success)",
+      "  - scripts/test_import_blood_labs.py (parse_reference_range, date_chunks)"
+    ],
+    "now": "Tests written but NOT run. Resume by running the tests, fixing failures, committing.",
+    "next_steps": [
+      "Run tests and fix any failures: cd scripts/ && python3 -m unittest test_health_db test_health_store -v",
+      "Run: python3.13 -m pytest scripts/test_health_store_cmd.py scripts/test_import_blood_labs.py -v (note: test_health_store_cmd.py is in skill scripts dir, not scripts/)",
+      "Commit passing tests: git add + git commit 'test(health-db): add behavioral tests for health_db, health_store, health_store_cmd, import-blood-labs'",
+      "Then: scope the health query skill (/spectre:scope) — the DB payoff"
+    ],
+    "confidence": "high",
+    "constraints": [
+      "Test files for skill scripts live in: agents/sample-agent/workspace/skills/podcast-summary/scripts/",
+      "Host script tests live in: scripts/",
+      "Use python3 -m unittest for skill script tests, python3.13 -m pytest for host script tests",
+      "test_health_store_cmd.py and test_import_blood_labs.py are in DIFFERENT directories despite agent 2 mentioning them together",
+      "oura-sync.py and import-blood-labs.py have hyphens so must be loaded via importlib in tests"
+    ],
+    "decisions": [
+      "All planning docs live in ~/Code Projects/Health DB/ (not in ironclaw repo)",
+      "Weekly Oura sync: launchd Monday 3am, incremental via sync_state",
+      "Oura heartrate API only returns recent data — historical gap is API limitation"
+    ],
+    "blockers": [],
+    "open_questions": [
+      "Do the 4 test files actually pass? Run them to find out."
+    ],
+    "risks": [
+      "test_health_store_cmd.py mock paths may need adjustment (patch at health_store_cmd module namespace)",
+      "test_health_store.py needs to monkey-patch health_db.get_connection to use temp DB"
+    ]
+  },
+  "working_set": {
+    "key_files": [
+      "agents/sample-agent/workspace/skills/podcast-summary/scripts/test_health_db.py",
+      "agents/sample-agent/workspace/skills/podcast-summary/scripts/test_health_store.py",
+      "agents/sample-agent/workspace/skills/podcast-summary/scripts/test_health_store_cmd.py",
+      "scripts/test_import_blood_labs.py",
+      "agents/sample-agent/workspace/skills/podcast-summary/scripts/health_db.py",
+      "agents/sample-agent/workspace/skills/podcast-summary/scripts/health_store.py"
+    ],
+    "active_ids": [],
+    "recent_commands": [
+      "python3.13 scripts/oura-sync.py --historical",
+      "python3.13 scripts/import-blood-labs.py --file ~/Documents/Fitness/BloodTest_Tracker.xlsx",
+      "git commit chore(health-db): remove dead code from SQLite migration"
+    ]
+  },
+  "context": {
+    "wip_state": "uncommitted",
+    "last_commit": "0fb89cf",
+    "wip_note": "17 uncommitted files: 4 test files (need to run+commit) + pre-existing workspace files"
+  }
+}
