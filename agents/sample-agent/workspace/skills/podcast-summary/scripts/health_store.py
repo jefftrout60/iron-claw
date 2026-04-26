@@ -9,8 +9,8 @@ import time
 import urllib.request
 from pathlib import Path
 
-# health_db.py is in the same directory
-sys.path.insert(0, str(Path(__file__).parent))
+# health_db.py lives in workspace/health/ (one level up from skills/)
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "health"))
 import health_db
 
 

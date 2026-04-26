@@ -23,10 +23,10 @@ from pathlib import Path
 
 import requests
 
-# health_db lives in the podcast-summary skill scripts directory
+# health_db lives in workspace/health/
 _REPO_ROOT = Path(__file__).parent.parent
-_SKILL_SCRIPTS = _REPO_ROOT / "agents/sample-agent/workspace/skills/podcast-summary/scripts"
-sys.path.insert(0, str(_SKILL_SCRIPTS))
+_HEALTH_DIR = _REPO_ROOT / "agents/sample-agent/workspace/health"
+sys.path.insert(0, str(_HEALTH_DIR))
 import health_db
 
 logging.basicConfig(

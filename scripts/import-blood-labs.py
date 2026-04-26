@@ -19,10 +19,10 @@ import re
 import sys
 from pathlib import Path
 
-# health_db lives in the podcast-summary skill scripts directory
+# health_db lives in workspace/health/
 _REPO_ROOT = Path(__file__).parent.parent
-_SKILL_SCRIPTS = _REPO_ROOT / "agents/sample-agent/workspace/skills/podcast-summary/scripts"
-sys.path.insert(0, str(_SKILL_SCRIPTS))
+_HEALTH_DIR = _REPO_ROOT / "agents/sample-agent/workspace/health"
+sys.path.insert(0, str(_HEALTH_DIR))
 import health_db
 
 
@@ -162,21 +162,37 @@ def run(filepath: str, dry_run: bool) -> None:
     skipped = 0
 
     for _, row in combined.iterrows():
-        # Upsert marker
+        # Extract unit from marker name if embedded in parentheses at end
+        # e.g. "Glucose (mg/dL)" → "mg/dL"; "HbA1c (%)" → "%"
+        unit_match = re.search(r'\(([^)]+)\)\s*$', str(row["marker_name"]).strip())
+        canonical_unit = unit_match.group(1) if unit_match else None
+
+        # Upsert marker — set canonical_unit if we can parse it
         conn.execute(
-            "INSERT OR IGNORE INTO lab_markers (name) VALUES (?)",
-            (row["marker_name"],),
+            """INSERT INTO lab_markers (name, canonical_unit)
+               VALUES (?, ?)
+               ON CONFLICT(name) DO UPDATE SET
+                 canonical_unit = COALESCE(excluded.canonical_unit, lab_markers.canonical_unit)""",
+            (row["marker_name"], canonical_unit),
         )
         marker_row = conn.execute(
             "SELECT id FROM lab_markers WHERE name = ?", (row["marker_name"],)
         ).fetchone()
         marker_id = marker_row[0]
 
-        # Insert result
+        # Upsert result — preserve imported_at and id on re-import
         cursor = conn.execute(
-            """INSERT OR REPLACE INTO lab_results
+            """INSERT INTO lab_results
                  (marker_id, date, value, reference_low, reference_high, source_sheet)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(marker_id, date) DO UPDATE SET
+                 value          = excluded.value,
+                 reference_low  = excluded.reference_low,
+                 reference_high = excluded.reference_high,
+                 source_sheet   = excluded.source_sheet
+               WHERE lab_results.value IS NOT excluded.value
+                  OR lab_results.reference_low IS NOT excluded.reference_low
+                  OR lab_results.reference_high IS NOT excluded.reference_high""",
             (
                 marker_id,
                 row["date"],

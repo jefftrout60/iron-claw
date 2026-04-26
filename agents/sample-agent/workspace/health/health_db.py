@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SQLite schema owner and connection manager for podcast_vault/health.db.
+SQLite schema owner and connection manager for health.db.
 
 Resolves the DB path relative to this file so the same code works on the
 Mac host and inside the Docker container (same relative structure on both
@@ -16,13 +16,13 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-# podcast_vault/ is one level up from scripts/ — mirrors vault.py:18
-_VAULT_DIR = Path(__file__).parent.parent / "podcast_vault"
+# health.db lives alongside this file in workspace/health/
+_HEALTH_DIR = Path(__file__).parent
 
 
 def get_db_path() -> Path:
-    """Return absolute path to podcast_vault/health.db."""
-    return _VAULT_DIR / "health.db"
+    """Return absolute path to workspace/health/health.db."""
+    return _HEALTH_DIR / "health.db"
 
 
 def get_connection(db_path: Path | None = None) -> sqlite3.Connection:
@@ -85,9 +85,6 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     """)
 
     # ---------- FTS5 virtual table + triggers ---------------------------
-    # External content table — FTS index auto-synced via triggers below.
-    # Use separate execute() calls; executescript() commits any open transaction
-    # which can interfere with schema initialisation inside a transaction.
     conn.execute("""
         CREATE VIRTUAL TABLE IF NOT EXISTS health_knowledge_fts USING fts5(
             episode_title, summary,
@@ -119,12 +116,17 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     # ---------- lab_markers ---------------------------------------------
     conn.execute("""
         CREATE TABLE IF NOT EXISTS lab_markers (
-            id      INTEGER PRIMARY KEY AUTOINCREMENT,
-            name    TEXT NOT NULL UNIQUE,
-            unit    TEXT,
-            aliases TEXT
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            name            TEXT NOT NULL UNIQUE,
+            canonical_unit  TEXT,
+            aliases         TEXT
         )
     """)
+    # Add canonical_unit to existing DBs (idempotent — ignored if already present)
+    try:
+        conn.execute("ALTER TABLE lab_markers ADD COLUMN canonical_unit TEXT")
+    except sqlite3.OperationalError:
+        pass
 
     # ---------- lab_results ---------------------------------------------
     conn.execute("""
@@ -235,5 +237,3 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     """)
 
     conn.commit()
-
-

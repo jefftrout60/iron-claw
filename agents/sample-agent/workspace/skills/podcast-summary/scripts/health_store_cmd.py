@@ -13,8 +13,9 @@ import os
 import sys
 from pathlib import Path
 
-# Scripts dir is this file's own directory; vault and health_store live here too
+# Scripts dir contains vault and health_store; health_db lives in workspace/health/
 sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "health"))
 from vault import get_vault_path, load_vault
 import health_store
 

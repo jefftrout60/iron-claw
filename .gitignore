@@ -117,6 +117,10 @@ agents/*/workspace/audio/*.wav
 agents/sample-agent/workspace/skills/*/ollama-hosts.json
 
 # Health DB — SQLite runtime data (contains personal health data, do not commit)
+agents/*/workspace/health/*.db
+agents/*/workspace/health/*.db-shm
+agents/*/workspace/health/*.db-wal
+# Old location (kept in case of leftover files)
 agents/*/workspace/skills/podcast-summary/podcast_vault/*.db
 agents/*/workspace/skills/podcast-summary/podcast_vault/*.db-shm
 agents/*/workspace/skills/podcast-summary/podcast_vault/*.db-wal

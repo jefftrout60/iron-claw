@@ -15,11 +15,11 @@ import json
 import sys
 from pathlib import Path
 
-# Add the skill scripts directory to sys.path so health_db and vault import cleanly
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent
-    / "agents/sample-agent/workspace/skills/podcast-summary/scripts"
-)
+# health_db lives in workspace/health/; vault lives in podcast-summary/scripts/
+_REPO_ROOT = Path(__file__).parent.parent
+_HEALTH_DIR = _REPO_ROOT / "agents/sample-agent/workspace/health"
+_SCRIPTS_DIR = _REPO_ROOT / "agents/sample-agent/workspace/skills/podcast-summary/scripts"
+sys.path.insert(0, str(_HEALTH_DIR))
 sys.path.insert(0, str(_SCRIPTS_DIR))
 
 import health_db  # noqa: E402

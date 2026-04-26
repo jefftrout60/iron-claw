@@ -13,7 +13,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "health"))
 
 import health_db
 
@@ -24,11 +24,11 @@ import health_db
 
 class TestGetDbPath(unittest.TestCase):
 
-    def test_returns_path_ending_in_podcast_vault_health_db(self):
+    def test_returns_path_ending_in_workspace_health_health_db(self):
         path = health_db.get_db_path()
         self.assertIsInstance(path, Path)
         self.assertEqual(path.parts[-1], "health.db")
-        self.assertEqual(path.parts[-2], "podcast_vault")
+        self.assertEqual(path.parts[-2], "health")
 
     def test_returns_absolute_path(self):
         path = health_db.get_db_path()
