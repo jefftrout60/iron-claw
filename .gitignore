@@ -115,3 +115,12 @@ agents/*/workspace/skills/image-vision/ollama-last.json
 # Audio recordings (runtime artifacts, do not commit)
 agents/*/workspace/audio/*.wav
 agents/sample-agent/workspace/skills/*/ollama-hosts.json
+
+# Health DB — SQLite runtime data (contains personal health data, do not commit)
+agents/*/workspace/skills/podcast-summary/podcast_vault/*.db
+agents/*/workspace/skills/podcast-summary/podcast_vault/*.db-shm
+agents/*/workspace/skills/podcast-summary/podcast_vault/*.db-wal
+
+# Agent workspace runtime outputs (weather lookups, task logs, etc.)
+agents/*/workspace/*-weather-*.json
+agents/*/workspace/TODO.md

@@ -10,6 +10,7 @@ services:
     read_only: true # Security: Immutable filesystem
     tmpfs:
       - /tmp:size=512m,uid=1000,gid=1000
+      - /home/openclaw/.npm:size=256m,uid=1000,gid=1000
     user: "1000:1000" # Run as openclaw (UID 1000), not root
     extra_hosts:
       - "host.docker.internal:host-gateway" # Bridge to Host Ollama

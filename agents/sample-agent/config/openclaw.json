@@ -263,6 +263,17 @@
     "ackReactionScope": "group-mentions"
   },
   "channels": {
+    "bluebubbles": {
+      "enabled": true,
+      "serverUrl": "http://host.docker.internal:1235",
+      "password": "${BLUEBUBBLES_PASSWORD}",
+      "dmPolicy": "allowlist",
+      "allowFrom": [
+        "+14258916930",
+        "+14256382750",
+        "+14252608219"
+      ]
+    },
     "telegram": {
       "enabled": true,
       "dmPolicy": "allowlist",
@@ -282,6 +293,9 @@
   },
   "plugins": {
     "entries": {
+      "bluebubbles": {
+        "enabled": true
+      },
       "telegram": {
         "enabled": true
       }
