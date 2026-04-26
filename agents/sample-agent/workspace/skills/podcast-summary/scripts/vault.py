@@ -21,7 +21,6 @@ _VAULT_DIR = Path(__file__).parent.parent / "podcast_vault"
 _EMPTY_SCHEMAS = {
     "feeds.json":             {"version": 1, "last_updated": None, "feeds": []},
     "episodes.json":          {"version": 1, "episodes": []},
-    "health_knowledge.json":  {"version": 1, "entries": []},
     "processing_status.json": {
         "version": 1,
         "run_date": None,
