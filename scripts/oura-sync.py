@@ -169,7 +169,7 @@ def sync_daily_summaries(conn, headers: dict, start: str, end: str) -> None:
             if not day:
                 continue
             score = rec.get("score")
-            contribs = rec.get("contributors", {})
+            contribs = rec.get("contributors") or {}
             merge(day, sleep_score=score,
                   contributors_json=json.dumps({"sleep": contribs}))
 
@@ -179,7 +179,7 @@ def sync_daily_summaries(conn, headers: dict, start: str, end: str) -> None:
             merge(day,
                   readiness_score=rec.get("score"),
                   temp_deviation=rec.get("temperature_deviation"),
-                  resting_heart_rate=rec.get("contributors", {}).get("resting_heart_rate"))
+                  resting_heart_rate=(rec.get("contributors") or {}).get("resting_heart_rate"))
 
         # daily_activity
         for rec in fetch_all("daily_activity", chunk_start, chunk_end, headers):
@@ -194,7 +194,7 @@ def sync_daily_summaries(conn, headers: dict, start: str, end: str) -> None:
         # HRV is already captured via sleep sessions avg_hrv field)
         for rec in fetch_all("daily_spo2", chunk_start, chunk_end, headers):
             day = rec.get("day", "")
-            spo2 = rec.get("spo2_percentage", {})
+            spo2 = rec.get("spo2_percentage") or {}
             merge(day,
                   spo2_avg=spo2.get("average"),
                   spo2_min=spo2.get("min"))
