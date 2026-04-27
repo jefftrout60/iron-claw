@@ -136,6 +136,19 @@ class TestAppendEntryInsert(_HealthStoreTestBase):
         entry = health_store.append_entry(data, api_key="")
         self.assertEqual(entry["source"], "newsletter")
 
+    def test_raw_transcript_stored_when_provided(self):
+        data = _minimal_entry(raw_transcript="some transcript text")
+        entry = health_store.append_entry(data, api_key="")
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry["raw_transcript"], "some transcript text")
+
+    def test_raw_transcript_none_when_omitted(self):
+        data = _minimal_entry()  # no raw_transcript key
+        entry = health_store.append_entry(data, api_key="")
+        self.assertIsNotNone(entry)
+        self.assertIn("raw_transcript", entry, "raw_transcript key should be present even when omitted")
+        self.assertIsNone(entry["raw_transcript"])
+
 
 # ---------------------------------------------------------------------------
 # P1 — append_entry() deduplicates on (show, episode_title, date)
@@ -219,6 +232,13 @@ class TestLoadAll(_HealthStoreTestBase):
             )
         entries = health_store.load_all()
         self.assertEqual(len(entries), 3)
+
+    def test_raw_transcript_persists_through_load_all(self):
+        data = _minimal_entry(raw_transcript="persisted transcript text")
+        health_store.append_entry(data, api_key="")
+        entries = health_store.load_all()
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["raw_transcript"], "persisted transcript text")
 
 
 # ---------------------------------------------------------------------------
