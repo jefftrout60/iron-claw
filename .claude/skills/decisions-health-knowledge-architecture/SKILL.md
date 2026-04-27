@@ -9,13 +9,15 @@ user-invocable: false
 **Trigger**: health_knowledge, health_db, health.db, health intelligence, Oura, blood labs, DEXA, biometric, trusted sources, Attia, Huberman, Patrick, SQLite migration, health store, health_store
 **Confidence**: high
 **Created**: 2026-03-28
-**Updated**: 2026-04-26
-**Version**: 2
+**Updated**: 2026-04-27
+**Version**: 3
 
-## Status: Migration Complete (2026-04-26)
+## Status: Read Layer Complete (2026-04-27)
 
 `health_knowledge.json` has been **retired**. The unified SQLite database `health.db` is live at:
-`agents/sample-agent/workspace/skills/podcast-summary/podcast_vault/health.db`
+`agents/sample-agent/workspace/health/health.db`
+
+`health_db.py` was moved from `skills/podcast-summary/scripts/` to `workspace/health/` (S4). The new health-query read layer (`health_query.py`, `cost_summary.py`, `SKILL.md`) was added in 2026-04-27.
 
 ## What's in health.db
 
@@ -35,20 +37,26 @@ user-invocable: false
 `health_db.py` owns schema + connection. `health_store.py` keeps its public API unchanged — callers (`engine.py`, `on_demand.py`) required **zero changes**.
 
 ```python
-# DB path resolution — same from host and inside Docker container
-# health_db.py uses vault.py's pattern:
-_VAULT_DIR = Path(__file__).parent.parent / "podcast_vault"
+# DB path resolution — health_db.py resolves relative to its own location
+_HEALTH_DIR = Path(__file__).parent  # workspace/health/
 ```
 
 Key files:
 | File | Role |
 |---|---|
-| `skills/podcast-summary/scripts/health_db.py` | Schema + connection manager |
+| `workspace/health/health_db.py` | Schema + connection manager (moved from podcast-summary/scripts/ in S4) |
+| `workspace/health/health.db` | The database (moved from podcast_vault/ in S4) |
+| `workspace/health/health_query.py` | Read layer: `lab-trend`, `oura-window`, `search` subcommands → JSON stdout |
+| `workspace/health/cost_summary.py` | Session JSONL cost aggregator: `--week` / `--month` → JSON stdout |
+| `workspace/health/test_health_query.py` | 21 unit tests for health_query.py (in-memory SQLite fixture) |
+| `workspace/skills/health-query/SKILL.md` | Agent skill: 6 intents for health questions + weekly email |
 | `skills/podcast-summary/scripts/health_store.py` | R/W interface (append_entry, load_all) |
 | `skills/podcast-summary/scripts/health_store_cmd.py` | CLI for SKILL.md Intent 6 |
 | `scripts/import-blood-labs.py` | One-shot Excel importer (--dry-run mode) |
 | `scripts/oura-sync.py` | Oura v2 API sync (historical + incremental) |
 | `scripts/launchagents/com.ironclaw.oura-sync.plist` | Weekly launchd job (Mon 3am) |
+
+Container exec path for health_query.py: `/home/openclaw/.openclaw/workspace/health/health_query.py`
 
 ## Running Imports
 
@@ -102,11 +110,11 @@ All follow the same pattern: new table in `health_db.py` + new import script.
 - **Topics field population** — `topics: []` is empty in all entries
 - **Pattern detection skill** — on-demand or scheduled digest
 
-## Known Architecture Issues (from review 2026-04-26)
+## Known Architecture Issues (status: 2026-04-27)
 
-1. **DB is owned by podcast-summary** — should move to `workspace/health/` before adding more pillars
+1. ~~**DB is owned by podcast-summary**~~ — **RESOLVED**: health_db.py + health.db moved to `workspace/health/` (S4)
 2. **No migration framework** — `PRAGMA user_version` runner needed for schema changes
 3. **No backup strategy** — add daily `sqlite3 health.db ".backup ..."` cron
-4. **No read API** — `health_query.py` with `lab_trend`, `daily_brief`, `search_health_knowledge` needed
+4. ~~**No read API**~~ — **RESOLVED**: `health_query.py` built (2026-04-27) with `lab-trend`, `oura-window`, `search` subcommands + `health-query` skill
 5. **No `events` table** — needed for intervention correlations ("started statin", "DEXA scan")
 6. **Unit tracking missing** for lab markers — risk of cross-provider unit mismatch in trends

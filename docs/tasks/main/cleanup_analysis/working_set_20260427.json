@@ -1,0 +1,24 @@
+{
+  "scope_mode": "unstaged",
+  "branch": "main",
+  "timestamp": "2026-04-27",
+  "files": {
+    "modified": [
+      ".claude/skills/decisions-health-knowledge-architecture/SKILL.md",
+      "agents/sample-agent/config/openclaw.json",
+      "agents/sample-agent/workspace/health/health_db.py",
+      "agents/sample-agent/workspace/skills/podcast-summary/scripts/engine.py",
+      "agents/sample-agent/workspace/skills/podcast-summary/scripts/health_store.py",
+      "agents/sample-agent/workspace/skills/podcast-summary/scripts/on_demand.py"
+    ],
+    "untracked": [
+      "agents/sample-agent/workspace/health/cost_summary.py",
+      "agents/sample-agent/workspace/health/health_query.py",
+      "agents/sample-agent/workspace/health/test_health_query.py",
+      "agents/sample-agent/workspace/skills/health-query/SKILL.md",
+      "docs/tasks/main/session_logs/2026-04-26-174526_handoff.json",
+      "docs/tasks/main/session_logs/2026-04-27-060310_handoff.json"
+    ],
+    "excluded": ["docs/tasks/main/session_logs/*.json — handoff state, not code"]
+  }
+}

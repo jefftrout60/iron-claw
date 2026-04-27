@@ -1,0 +1,101 @@
+{
+  "version": "1.1",
+  "timestamp": "2026-04-27-060310",
+  "branch_name": "main",
+  "task_name": "health_query.py — Health Intelligence Router",
+  "session_number": 5,
+  "continuity": {
+    "started": "2026-04-26",
+    "sessions_reviewed": 4,
+    "arc_goal": "Build unified Health SQLite database (health.db) with cross-pillar queries + read layer (health_query.py) so agent can answer 'how has my ApoB changed and what does Attia say about it' meaningfully via iMessage/BlueBubbles, with weekly Sunday email summaries and spend tracking."
+  },
+  "progress_update": {
+    "summary": "Completed scope + plan + bonus (raw_transcript storage). Ran /spectre:scope to define health_query.py (3 subcommands: lab-trend, oura-window, search). Ran /spectre:plan producing plan_health_query.md (STANDARD depth, 4 phases, 17 sub-tasks). As bonus: added raw_transcript column to health_knowledge table, updated health_store.append_entry() to accept and store it, wired engine.py + on_demand.py to pass transcript text through. All 36 tests still passing. Ready to execute health_query.py implementation next session.",
+    "goal": "Build health.db read layer: health_query.py (3 subcommands), cost_summary.py, health-query SKILL.md (6 intents), enable Perplexity web search, weekly Sunday email with LLM-synthesized Oura summary + spend tracking.",
+    "accomplished": [
+      "Scoped health_query.py — confirmed routing in SKILL.md (not script), Option A new dedicated health-query skill, weekly summary replaces daily brief, Perplexity already configured (just needs enabled: true)",
+      "Produced ~/Code Projects/Health DB/concepts/scope_health_query.md",
+      "Produced ~/Code Projects/Health DB/specs/plan_health_query.md (STANDARD depth, 4 phases)",
+      "Produced ~/Code Projects/Health DB/specs/tasks_health_query.md (4 phases, 8 parents, 17 sub-tasks)",
+      "Shipped raw transcript storage: health_db.py + health_store.py + engine.py + on_demand.py — all 36 tests passing"
+    ],
+    "now": "Handoff after completing scope, plan, tasks, and raw transcript storage. Ready to execute health_query.py implementation next session.",
+    "next_steps": [
+      "Run /spectre:handoff then /clear for fresh context window",
+      "Run /spectre:execute against ~/Code Projects/Health DB/specs/tasks_health_query.md",
+      "Wave 1 (parallel): script scaffold (1.4) + enable Perplexity config change (3.1)",
+      "Wave 2 (parallel): lab-trend (1.1), oura-window (1.2), search (1.3), cost_summary.py (2.1)",
+      "Wave 3 (parallel): tests (4.1) + SKILL.md intents 1-5 (3.2)",
+      "Wave 4: cron intent (3.3)"
+    ],
+    "confidence": "high",
+    "constraints": [
+      "health_query.py runs inside agent container via exec — paths must be container-relative (/home/openclaw/.openclaw/workspace/health/)",
+      "Python 3 only, no jq, no new pip deps beyond stdlib + sqlite3",
+      "health.db at workspace/health/health.db — import health_db via sys.path.insert",
+      "Perplexity already configured in openclaw.json, just needs enabled: true under tools.web.search",
+      "Weekly summary email via existing send-email.sh (SMTP_FROM_EMAIL + GMAIL_APP_PASSWORD in .env)",
+      "Sessions JSONL for cost_summary: config-runtime/agents/main/sessions/*.jsonl (host); /home/openclaw/.openclaw/agents/main/sessions/ (container)",
+      "Separate health-query skill from podcast-summary — different interaction model",
+      "All planning docs in ~/Code Projects/Health DB/ — NOT in ironclaw repo docs/tasks/",
+      "health.db now lives at workspace/health/health.db (moved from podcast_vault/ in S4)",
+      "health_db.py now lives at workspace/health/health_db.py (moved in S4 after Opus review)",
+      "BlueBubbles is sole active channel — Telegram disabled (config preserved)",
+      "Agent runs on Freedom (M5 Max); BlueBubbles troutbot user must stay logged in via Fast User Switching",
+      "health_store.py public API (append_entry, load_all, find_by_show) must be preserved — engine.py and on_demand.py cannot change",
+      "DB accessible from both host (python3.13) and container (python3)",
+      "All host scripts use /usr/local/bin/python3.13; deps installed via pip3.13",
+      "FTS5 verified available in both host and container Python",
+      "Oura heartrate API only returns recent data — historical intraday HR not available via v2 API",
+      "Oura API gap: Jan 1 – Jun 15 2016 not available via API (app shows it, API does not)",
+      "Blood lab Excel at ~/Documents/Fitness/BloodTest_Tracker.xlsx — re-run import script if file is updated",
+      "Weekly Oura sync runs Monday 3am via launchd; token in agents/sample-agent/.env"
+    ],
+    "decisions": [
+      "Routing logic in SKILL.md not health_query.py — agent has conversational context for follow-up contrast flow",
+      "New dedicated health-query SKILL.md (Option A) — separate from podcast-summary",
+      "Weekly summary via agent cron tool (built-in) — no external launchd needed",
+      "Raw transcript storage added to write pipeline now — health_db, health_store, engine, on_demand all updated",
+      "search subcommand returns count=0 (not error) when no results — agent uses count to decide web fallback",
+      "health_query.py should be exec-able from SKILL.md — same pattern as on_demand.py",
+      "Telegram disabled (not deleted) — re-enable anytime by setting enabled: true in openclaw.json",
+      "Option A (swap-in place): health_store.py internals replaced with SQLite, public API unchanged — zero changes to callers",
+      "launchd oura sync uses StartCalendarInterval (batch/weekly) not KeepAlive (daemon) — different from whisper-server pattern",
+      "Blood lab import runs --dry-run first to handle unknown Excel layout quirks before committing",
+      "Jeff has Gen3 Oura ring — pull all endpoints including stress, resilience, VO2 max; handle 404s gracefully",
+      "Oura heartrate 'missing' data is an API limitation — not fixable, accepted as-is",
+      "daily_spo2 is the correct Oura v2 endpoint (not spo2); daily_hrv endpoint doesn't exist (HRV via sleep sessions avg_hrv)",
+      "All planning docs now live in ~/Code Projects/{Project Name}/ — not inside the ironclaw repo"
+    ],
+    "blockers": [],
+    "open_questions": [],
+    "risks": [
+      "Knowledge coverage gap: only ~12 episodes indexed; bulk Attia/Huberman/Rhonda ingestion is backlog",
+      "cost_summary.py path resolution needs to work in both host and container contexts",
+      "Remaining architecture issues from S4 review: no migration runner (A2), no backup strategy (A3), daily vs weekly Oura sync (O1) — low urgency but worth addressing before adding more pillars"
+    ]
+  },
+  "working_set": {
+    "key_files": [
+      "agents/sample-agent/workspace/health/health_db.py",
+      "agents/sample-agent/workspace/health/health.db",
+      "agents/sample-agent/workspace/skills/podcast-summary/scripts/health_store.py",
+      "agents/sample-agent/workspace/skills/podcast-summary/scripts/engine.py",
+      "agents/sample-agent/workspace/skills/podcast-summary/scripts/on_demand.py",
+      "agents/sample-agent/config/openclaw.json",
+      "~/Code Projects/Health DB/specs/tasks_health_query.md",
+      "~/Code Projects/Health DB/specs/plan_health_query.md",
+      "~/Code Projects/Health DB/concepts/scope_health_query.md"
+    ],
+    "active_ids": [],
+    "recent_commands": [
+      "python3 -m unittest test_health_db test_health_store -v",
+      "./scripts/compose-up.sh sample-agent -d"
+    ]
+  },
+  "context": {
+    "wip_state": "uncommitted",
+    "last_commit": "bf8646f",
+    "session_arc": "5-session sprint on health-db + health_query.py (started Apr 26, continuing Apr 27). S1 scoped & planned health-db. S2 implemented phases 1-3 (SQLite, blood labs, Oura). S3 wrote 4 test files. S4 clean/test/evaluate, fixed architecture issues, pushed, disabled Telegram. S5 scoped health_query.py, planned 4 phases, shipped raw_transcript storage. Ready to execute health_query.py next session."
+  }
+}
