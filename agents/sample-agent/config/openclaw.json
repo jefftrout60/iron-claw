@@ -325,6 +325,9 @@
       },
       "podcast-summary": {
         "enabled": true
+      },
+      "health-query": {
+        "enabled": true
       }
     }
   },
@@ -332,7 +335,7 @@
     "exec": {},
     "web": {
       "search": {
-        "enabled": false,
+        "enabled": true,
         "provider": "perplexity"
       },
       "fetch": {

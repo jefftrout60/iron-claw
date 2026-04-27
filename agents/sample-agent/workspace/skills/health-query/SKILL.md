@@ -1,0 +1,250 @@
+---
+name: health-query
+description: >
+  Personal health intelligence. Use when the user asks about their lab results,
+  Oura ring metrics, health trends, or health questions referencing trusted
+  sources (Attia, Huberman, Patrick). Also handles weekly health summary email.
+metadata:
+  openclaw:
+    requires:
+      bins: ["bash", "python3"]
+---
+
+# Health Query — EXECUTE THE MATCHING INTENT PIPELINE IN ORDER. DO NOT SKIP ANY STEP.
+
+## Intent Classification
+
+Read the user's message and identify which intent applies:
+
+| Intent | Trigger examples | Action |
+|--------|-----------------|--------|
+| 1 — Lab query | "what's my ferritin", "show me my A1c trend", "my cholesterol", "LDL over the last year" | exec lab-trend, synthesize |
+| 2 — Oura query | "how's my HRV", "last week's sleep", "readiness score", "Oura", "recovery score", "how did I sleep" | exec oura-window, synthesize |
+| 3 — Knowledge search | "what does Attia say about X", "trusted sources on Y", "what does the research say about Z" | exec search, web fallback if thin |
+| 4 — Web contrast | "do a web search on that", "contrast with web", "what does the internet say" | web_search, contrast prior trusted answer |
+| 5 — Weekly summary on-demand | "give me my weekly summary", "weekly health report", "send my health summary" | pipeline: oura-window + cost + email |
+| 6 — Set up weekly cron | "set up my weekly summary", "schedule weekly health email", "automate weekly summary" | register Sunday 6 PM cron via cron tool |
+
+---
+
+## Intent 1 — Lab Query
+
+**Trigger:** User asks about a specific lab marker — current value, trend, or whether it's in range.
+
+### STEP 1 — Query the lab database (exec, mandatory)
+
+Extract the marker name from the user's message. Use 12 months as the default lookback unless the user specifies otherwise.
+
+```
+exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py lab-trend --marker "{marker}" --months {n}
+```
+
+Examples:
+- "what's my ferritin" → `--marker ferritin --months 12`
+- "show me A1c over the last 6 months" → `--marker A1c --months 6`
+
+### STEP 2 — Synthesize and reply (reply, mandatory)
+
+Parse the JSON output and reply in natural language. Include:
+- Most recent value with date and units
+- Trend direction over the period (rising, falling, stable)
+- Reference range context — is the value in range, borderline, or flagged?
+- Any notable inflection points if there are multiple readings
+
+**If exec returns an error or the marker is not found:** Tell the user plainly — "I don't have any results for [marker] in the database — check the spelling or let me know the exact name used in your labs."
+
+**Hard rule: NEVER reply with raw JSON. NEVER mention script names, exec, or file paths.**
+
+---
+
+## Intent 2 — Oura Query
+
+**Trigger:** User asks about sleep, HRV, readiness, recovery, resting heart rate, or any Oura ring metric.
+
+### STEP 1 — Query Oura data (exec, mandatory)
+
+Default to the last 7 days unless the user specifies a different window.
+
+```
+exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py oura-window --all --days {n}
+```
+
+Examples:
+- "how's my HRV this week" → `--all --days 7`
+- "last 30 days of sleep" → `--all --days 30`
+- "yesterday's readiness" → `--all --days 1`
+
+### STEP 2 — Synthesize and reply (reply, mandatory)
+
+Parse the JSON output and reply in natural language. Write a narrative covering:
+- Overview of the period: how sleep, readiness, and activity trended
+- Any notable metrics (a night with very low sleep score, an HRV spike or dip, elevated resting HR)
+- 1–2 sentence takeaway on what stands out
+
+**If exec returns an error or no data:** Tell the user — "The Oura data may not have synced yet — try again in a bit."
+
+**Hard rule: NEVER reply with raw JSON. NEVER mention script names, exec, or file paths.**
+
+---
+
+## Intent 3 — Knowledge Search (Trusted Sources + Optional Web Fallback)
+
+**Trigger:** User asks what Attia, Huberman, or Patrick say about a topic, or asks what the research says about a health subject.
+
+### STEP 1 — Search trusted sources (exec, mandatory)
+
+```
+exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py search --query "{query}"
+```
+
+Extract the health topic or question as the query string.
+
+### STEP 2 — Evaluate results
+
+- **If `count >= 3` AND the results contain relevant snippets:** Answer from trusted sources only. Skip web search unless the user explicitly asks for it.
+- **If `count == 0` OR `count < 2`:** Also run `web_search` with the same query (go to Step 3).
+
+### STEP 3 — Web fallback if trusted sources are thin (conditional)
+
+Run `web_search` with the same health query.
+
+### STEP 4 — Synthesize and reply (reply, mandatory)
+
+- **Trusted sources only:** Attribute the answer to the relevant sources (e.g. "Attia's take on this…") and give a clear, direct synthesis.
+- **Both sources have content:** Reply in two segments — "**Trusted sources say:** …" then "**Web adds:** …"
+- **Web only:** Lead with the web findings, then note: "My trusted source archive doesn't cover this topic yet."
+
+**Hard rule: NEVER reply with raw JSON. NEVER mention script names, exec, or file paths.**
+
+---
+
+## Intent 4 — Web Contrast
+
+**Trigger:** Follow-up request after the user has already received a trusted-source answer and now wants the broader web perspective. Phrases like "do a web search on that", "what does the internet say", "contrast with web".
+
+### STEP 1 — Run web search (web_search, mandatory)
+
+Use the same health topic extracted from the conversation context. Do NOT re-run `health_query.py search` — the trusted source answer is already in context.
+
+```
+web_search: {same health topic from conversation context}
+```
+
+### STEP 2 — Contrast and reply (reply, mandatory)
+
+Explicitly contrast the two perspectives:
+- What the trusted sources said
+- What the broader web says
+- Note any conflicts or areas of agreement
+
+**Hard rule: NEVER mention script names, exec, or file paths.**
+
+---
+
+## Intent 5 — Weekly Health Summary (On-Demand)
+
+**Trigger:** User asks for their weekly health summary or wants it emailed.
+
+This is a sequential pipeline. All steps are mandatory. Do not skip any step.
+
+### STEP 1 — Fetch Oura data (exec, mandatory)
+
+```
+exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py oura-window --all --days 7
+```
+
+Save the output — it is used in Step 3 to build the email body.
+
+### STEP 2 — Fetch month-to-date AI spend (exec, mandatory)
+
+```
+exec: python3 /home/openclaw/.openclaw/workspace/health/cost_summary.py --month
+```
+
+Save the cost total — it goes in the email footer.
+
+### STEP 3 — Synthesize the email body (mandatory)
+
+Build a plain-text email with this structure:
+
+```
+Subject: Weekly Health Summary — {start date} to {end date}
+
+OURA METRICS
+
+Day        | Sleep | Readiness | Activity | HRV  | RHR
+-----------|-------|-----------|----------|------|----
+{one row per day from the 7-day window}
+
+PATTERNS THIS WEEK
+
+{2–3 sentence narrative on what the data shows — what stands out, any trends worth noting}
+
+SUGGESTIONS FOR NEXT WEEK
+
+- {suggestion 1 based on the data}
+- {suggestion 2 based on the data}
+- {suggestion 3 based on the data}
+
+---
+Month-to-date AI spend: ${cost_usd}
+```
+
+Use the Oura data from Step 1 and the cost figure from Step 2. Derive the date range from the data.
+
+### STEP 4 — Write the email body to a temp file (write, mandatory)
+
+Use the `write` tool to write the synthesized email body (from Step 3) to a temp file:
+
+```
+write: /tmp/health_weekly.txt
+content: {full email body from Step 3}
+```
+
+### STEP 5 — Send the email (exec, mandatory)
+
+```
+exec: bash /home/openclaw/.openclaw/workspace/scripts/send-email.sh jeff@armantrouts.net "Weekly Health Summary" /tmp/health_weekly.txt
+```
+
+### STEP 6 — Confirm to user (reply, mandatory)
+
+Reply via iMessage: "Weekly summary sent to your email."
+
+**If any step fails:** Tell the user plainly what went wrong (e.g. "I couldn't reach the Oura data — the sync may be behind") without exposing internals. Do not send a partial email.
+
+---
+
+## Intent 6 — Set Up Weekly Summary Cron
+
+**Trigger:** User asks to schedule, automate, or set up the weekly health summary email. Phrases like "set up my weekly summary", "schedule weekly health email", "automate my weekly summary".
+
+### STEP 1 — Register the cron task (cron tool, mandatory)
+
+Use the built-in `cron` tool to register a recurring task:
+
+```
+cron: every Sunday at 18:00
+task: Send my weekly health summary to email
+```
+
+The task wording intentionally matches Intent 5 trigger phrases so the cron re-entry correctly routes to the weekly summary pipeline.
+
+This fires the Intent 5 pipeline automatically every Sunday at 6 PM. The cron task runs the full pipeline: Oura data → cost summary → email synthesis → send → iMessage confirmation.
+
+### STEP 2 — Confirm to user (reply, mandatory)
+
+Reply via iMessage: "Done — your weekly health summary is scheduled for every Sunday at 6 PM. The first one will arrive this Sunday (or next Sunday if it's already past 6 PM today)."
+
+**Hard rule: NEVER mention cron tool names, exec calls, or script paths in user-facing replies.**
+
+---
+
+## Hard Rules
+
+1. **NEVER reply with raw JSON.** Always synthesize exec output into natural language.
+2. **NEVER mention tool names, exec calls, or script paths** in user-facing replies.
+3. **If exec fails with an error**, tell the user plainly what went wrong without exposing internals.
+4. **Zero narration between steps.** Do not say "Let me look that up" or "Running the query now." Just execute.
+5. **Scripts run at:** `/home/openclaw/.openclaw/workspace/health/`
+6. **Send-email script is at:** `/home/openclaw/.openclaw/workspace/scripts/send-email.sh`
