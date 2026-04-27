@@ -1,0 +1,83 @@
+{
+  "version": "1.1",
+  "timestamp": "2026-04-27-072500",
+  "branch_name": "main",
+  "task_name": "health_query — Health Intelligence Router",
+  "session_number": 6,
+  "continuity": {
+    "started": "2026-04-26",
+    "sessions_reviewed": 3,
+    "arc_goal": "Build unified Health SQLite database (health.db) with cross-pillar queries + complete read layer (health_query.py, cost_summary.py, health-query SKILL.md) so agent can answer 'how has my ApoB changed and what does Attia say about it' meaningfully via iMessage/BlueBubbles, with weekly Sunday email summaries and spend tracking."
+  },
+  "progress_update": {
+    "summary": "We completed the full health intelligence read layer for health.db. Built health_query.py (3 subcommands: lab-trend, oura-window, search), cost_summary.py (session cost aggregator), and a health-query SKILL.md with 6 intents including weekly email summary and cron scheduling. Enabled Perplexity web search. Ran full SPECTRE cycle: execute → clean → test → push → evaluate → learn. 88 tests passing across 4 test files. All 5 commits pushed to origin/main.",
+    "goal": "Build health.db read layer: health_query.py (3 subcommands), cost_summary.py, health-query SKILL.md (6 intents), enable Perplexity web search, weekly Sunday email with LLM-synthesized Oura summary + spend tracking.",
+    "accomplished": [
+      "Built health_query.py with lab-trend, oura-window, search subcommands — JSON stdout, FTS5 phrase-quoting, LIKE wildcard escaping, schema-driven metric validation",
+      "Built cost_summary.py — session JSONL cost aggregator with 3-tier path resolution (env var, host parents[2], container hardcoded)",
+      "Created health-query/SKILL.md with 6 intents: lab query, Oura query, knowledge search + web fallback, web contrast, weekly summary pipeline, weekly cron registration",
+      "Enabled Perplexity web search in openclaw.json; added health-query skill entry",
+      "Added raw_transcript column to health_knowledge table; wired through health_store, engine, on_demand",
+      "88 tests passing: 21 (health_query) + 28 (cost_summary) + 39 (health_db + health_store)",
+      "Ran /spectre:clean (removed 9 lines dead code), /spectre:test (closed coverage gaps), pushed 5 commits to origin/main",
+      "Captured 2 new SPECTRE skills: patterns-openclaw-exec-scripts (new), patterns-sqlite-fts5-python v2 (FTS5 user input safety + LIKE escaping)"
+    ],
+    "now": "Session complete. Agent restarted with new skill and Perplexity config active. Ready for live iMessage testing.",
+    "next_steps": [
+      "Test health-query skill live via iMessage: lab query (ferritin trend), Oura query (last week sleep), knowledge search (HRV), weekly summary on-demand",
+      "Schedule weekly summary cron via iMessage: 'set up my weekly summary'",
+      "Next scope candidates: DB migration runner (PRAGMA user_version), events/interventions table, bulk Attia/Huberman podcast ingestion, daily SQLite backup cron",
+      "Architecture review from /spectre:evaluate still running in background — check docs/tasks/main/reviews/ for output"
+    ],
+    "confidence": "high",
+    "constraints": [
+      "health_query.py runs inside agent container — paths must be container-relative (/home/openclaw/.openclaw/workspace/health/)",
+      "Python 3 only, no new pip deps beyond stdlib + sqlite3",
+      "health.db at workspace/health/health.db — imported via sys.path.insert",
+      "Perplexity already configured in openclaw.json, now enabled: true",
+      "Weekly summary email via send-email.sh (SMTP_FROM_EMAIL + GMAIL_APP_PASSWORD in .env)",
+      "Sessions JSONL for cost_summary: config-runtime/agents/main/sessions/ (host); /home/openclaw/.openclaw/agents/main/sessions/ (container)",
+      "BlueBubbles is sole active channel — Telegram disabled (config preserved)",
+      "All planning docs in ~/Code Projects/Health DB/ — NOT in ironclaw repo docs/tasks/"
+    ],
+    "decisions": [
+      "Routing logic in SKILL.md not health_query.py — agent has conversational context for follow-up contrast flow",
+      "Email body via temp file write (/tmp/health_weekly.txt), not stdin piping — exec tool may not support stdin",
+      "FTS5 user input phrase-quoted (_fts_quote) to prevent operator injection; LIKE wildcards escaped with ESCAPE clause",
+      "Weekly summary cron task wording matches Intent 5 triggers exactly so cron re-entry routes correctly"
+    ],
+    "blockers": [],
+    "open_questions": [],
+    "risks": [
+      "Knowledge coverage gap: only ~12 episodes indexed; bulk Attia/Huberman/Rhonda ingestion is backlog",
+      "cost_summary.py mtime-based filtering is an approximation — sessions that span midnight may be miscounted",
+      "Architecture review result not yet available (background agent)"
+    ]
+  },
+  "working_set": {
+    "key_files": [
+      "agents/sample-agent/workspace/health/health_query.py",
+      "agents/sample-agent/workspace/health/cost_summary.py",
+      "agents/sample-agent/workspace/health/test_health_query.py",
+      "agents/sample-agent/workspace/health/test_cost_summary.py",
+      "agents/sample-agent/workspace/health/health_db.py",
+      "agents/sample-agent/workspace/skills/health-query/SKILL.md",
+      "agents/sample-agent/config/openclaw.json",
+      "agents/sample-agent/workspace/skills/podcast-summary/scripts/health_store.py",
+      "agents/sample-agent/workspace/skills/podcast-summary/scripts/engine.py",
+      "agents/sample-agent/workspace/skills/podcast-summary/scripts/on_demand.py"
+    ],
+    "active_ids": [],
+    "recent_commands": [
+      "python3.13 -m unittest test_health_query test_cost_summary -v",
+      "python3.13 -m unittest test_health_db test_health_store -v",
+      "./scripts/compose-up.sh sample-agent -d",
+      "git push origin main"
+    ]
+  },
+  "context": {
+    "wip_state": "clean",
+    "last_commit": "1593056",
+    "session_arc": "6-session sprint on health-db + health_query (Apr 26-27). S1 scoped health-db, S2 implemented phases 1-3 (SQLite, blood labs, Oura), S3 wrote tests + /spectre:clean, S4 ran clean/test/evaluate, fixed 3 architecture issues, pushed, disabled Telegram. S5 scoped health_query.py (3 subcommands, 6 intents), shipped raw_transcript storage. S6 executed health_query.py: built all 3 subcommands, cost_summary.py, health-query SKILL.md, enabled Perplexity, 88 tests passing, pushed 5 commits. Ready for live iMessage testing."
+  }
+}

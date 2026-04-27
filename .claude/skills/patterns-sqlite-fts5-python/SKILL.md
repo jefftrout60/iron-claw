@@ -9,8 +9,8 @@ user-invocable: false
 **Trigger**: SQLite, FTS5, sqlite3, health_db, INSERT OR IGNORE, dedup, rowcount, external content table, WAL mode, Python 3.9, union syntax, Path OR None
 **Confidence**: high
 **Created**: 2026-04-26
-**Updated**: 2026-04-26
-**Version**: 1
+**Updated**: 2026-04-27
+**Version**: 2
 
 ## Python 3.9 Compatibility
 
@@ -151,6 +151,59 @@ val = rec.get("contributors", {}).get("field")
 val = (rec.get("contributors") or {}).get("field")
 nested = rec.get("spo2_percentage") or {}
 ```
+
+## FTS5 User Input Safety
+
+When user-supplied text is passed directly to a MATCH query, FTS5 interprets
+`AND`/`OR`/`NOT`/`NEAR`/`*`/`:` as operators. "NOT sleeping" silently excludes
+documents containing "sleeping" — no error, just wrong results.
+
+**Fix: always phrase-quote user input before passing to MATCH:**
+
+```python
+def _fts_quote(query: str) -> str:
+    # Disables all FTS operator interpretation; literal phrase match only
+    return '"' + query.replace('"', '""') + '"'
+
+conn.execute(
+    "... WHERE health_knowledge_fts MATCH ? ORDER BY rank LIMIT ?",
+    (_fts_quote(user_query), limit),
+)
+```
+
+FTS5 escaping rule: a literal `"` inside the phrase doubles to `""`.
+
+**Error handling: use typed exception, not string matching:**
+
+```python
+# CORRECT — catches FTS5 parse errors precisely
+except sqlite3.OperationalError:
+    results = []
+
+# WRONG — fragile; also catches unrelated SQLite errors containing "syntax"
+except Exception as e:
+    if "fts5" in str(e).lower() or "syntax" in str(e).lower():
+        ...
+```
+
+## LIKE Wildcard Escaping
+
+`%` and `_` in user input have special meaning in `LIKE`. A marker search for
+`"Vit_D"` silently matches any single char at `_`; `"Ca%"` matches anything
+starting with "Ca". Always escape before building a substring LIKE:
+
+```python
+def _escape_like(s: str) -> str:
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+conn.execute(
+    "SELECT ... WHERE name LIKE ? ESCAPE '\\'",
+    (f"%{_escape_like(user_input)}%",),
+)
+```
+
+**Critical**: include `ESCAPE '\\'` in the SQL — without it SQLite ignores the
+backslash and the escaping does nothing.
 
 ## Schema Migration with user_version
 
