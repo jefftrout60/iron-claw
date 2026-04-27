@@ -128,6 +128,12 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     except sqlite3.OperationalError:
         pass
 
+    # Add raw_transcript to existing DBs (idempotent — ignored if already present)
+    try:
+        conn.execute("ALTER TABLE health_knowledge ADD COLUMN raw_transcript TEXT")
+    except sqlite3.OperationalError:
+        pass
+
     # ---------- lab_results ---------------------------------------------
     conn.execute("""
         CREATE TABLE IF NOT EXISTS lab_results (

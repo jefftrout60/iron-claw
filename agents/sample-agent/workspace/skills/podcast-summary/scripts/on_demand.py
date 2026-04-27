@@ -461,6 +461,7 @@ def run(
                     "source_quality": source_quality,
                     "summary": summary,
                     "tagged_by": "auto",
+                    "raw_transcript": transcript,
                 },
                 api_key,
                 model,

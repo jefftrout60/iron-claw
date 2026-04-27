@@ -372,6 +372,7 @@ def process_episodes(
                             "source_quality": source_quality,
                             "summary": summary,
                             "tagged_by": "auto",
+                            "raw_transcript": transcript,
                         },
                         api_key,
                         model,
@@ -572,10 +573,7 @@ Examples:
             print("[engine] WARNING: PODCAST_DIGEST_TO_EMAIL not set — skipping email", file=sys.stderr)
 
     # ------------------------------------------------------------------
-    # 5. Write processing_status.json
-    # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-    # 5a. Prune episodes.json (30d summaries, 90d metadata)
+    # 5. Prune episodes.json (30d summaries, 90d metadata)
     # ------------------------------------------------------------------
     v = _get_vault_module()
     episodes_path = v.get_vault_path("episodes.json")

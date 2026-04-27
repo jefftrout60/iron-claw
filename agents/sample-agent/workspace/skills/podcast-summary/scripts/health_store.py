@@ -96,14 +96,15 @@ def append_entry(entry_data: dict, api_key: str = "", model: str = "gpt-4o-mini"
         "topics": topics,
         "summary": entry_data["summary"],
         "tagged_by": entry_data.get("tagged_by", "auto"),
+        "raw_transcript": entry_data.get("raw_transcript"),
     }
 
     conn = health_db.get_connection()
     cursor = conn.execute(
         """INSERT OR IGNORE INTO health_knowledge
              (id, show, episode_title, episode_number, date, source,
-              source_quality, topics, summary, tagged_by)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+              source_quality, topics, summary, tagged_by, raw_transcript)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             entry["id"],
             entry["show"],
@@ -115,6 +116,7 @@ def append_entry(entry_data: dict, api_key: str = "", model: str = "gpt-4o-mini"
             json.dumps(entry["topics"]),
             entry["summary"],
             entry["tagged_by"],
+            entry["raw_transcript"],
         ),
     )
     if cursor.rowcount == 0:
