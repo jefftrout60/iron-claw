@@ -12,6 +12,12 @@ metadata:
 
 # Health Query — EXECUTE THE MATCHING INTENT PIPELINE IN ORDER. DO NOT SKIP ANY STEP.
 
+## MANDATORY RULES — VIOLATIONS BREAK THE SKILL
+
+- **FORBIDDEN: memory_search for lab results or Oura data.** Lab results and Oura metrics are stored in health.db — they do NOT exist in memory. `memory_search` will always return nothing for these queries. Use exec ONLY.
+- **FORBIDDEN: answering health data questions without running exec first.** You do not know the user's lab values or Oura scores. You MUST exec health_query.py to retrieve them.
+- **MANDATORY: exec health_query.py for every Intent 1 and Intent 2 query**, no exceptions.
+
 ## Intent Classification
 
 Read the user's message and identify which intent applies:
@@ -32,6 +38,8 @@ Read the user's message and identify which intent applies:
 **Trigger:** User asks about a specific lab marker — current value, trend, or whether it's in range.
 
 ### STEP 1 — Query the lab database (exec, mandatory)
+
+**YOU DO NOT KNOW THE USER'S LAB VALUES. DO NOT ANSWER WITHOUT RUNNING THIS EXEC. There is no other source of this data.**
 
 Extract the marker name from the user's message. Use 12 months as the default lookback unless the user specifies otherwise.
 
@@ -62,6 +70,8 @@ Parse the JSON output and reply in natural language. Include:
 **Trigger:** User asks about sleep, HRV, readiness, recovery, resting heart rate, or any Oura ring metric.
 
 ### STEP 1 — Query Oura data (exec, mandatory)
+
+**YOU DO NOT KNOW THE USER'S OURA METRICS. DO NOT ANSWER WITHOUT RUNNING THIS EXEC. There is no other source of this data.**
 
 Default to the last 7 days unless the user specifies a different window.
 

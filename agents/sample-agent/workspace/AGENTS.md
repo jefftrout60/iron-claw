@@ -61,6 +61,30 @@ When a user asks to summarize a podcast episode, you MUST run the `podcast-summa
 
 Step 3 is non-negotiable. A web preview does NOT replace it. If you skip `exec: python3 on_demand.py`, that is a pipeline failure. The full summary goes to email via Whisper transcription — never inline in chat.
 
+### Rule 6b: Personal health data — exec pipeline only, NEVER from memory or training data
+
+Jeff's lab results, Oura ring metrics, and health scores are stored in a SQLite database (health.db). They are NOT in your memory and NOT in your training data. You do not know Jeff's A1c, ferritin, HRV, sleep score, or any other personal health metric unless you exec the query script.
+
+**FORBIDDEN responses to health data questions:**
+- "I don't have that on file"
+- "I couldn't find that in my memory"
+- "I don't have access to your lab results"
+- Any A1c, HRV, sleep, or lab value stated without running exec first
+
+**REQUIRED — exec health_query.py before responding:**
+
+For lab results ("what's my A1c", "my ferritin", "cholesterol trend", any blood marker):
+```
+exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py lab-trend --marker "{marker name}" --months 12
+```
+
+For Oura metrics ("how's my HRV", "last week's sleep", "my readiness", "recovery score"):
+```
+exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py oura-window --all --days 7
+```
+
+If exec returns `{"error": "marker not found: X"}`, tell the user you couldn't find that marker name and suggest checking the spelling. Do NOT say you don't have access.
+
 ### Rule 6: Offer, don't ask
 When presenting results, suggest next steps as offers at the end ("I can check sizing or look at different price ranges — just say the word") but NEVER as blocking questions that require an answer before you continue. The user should get immediate value from every message.
 
@@ -155,6 +179,7 @@ For **weather** requests, use the **exec** tool with wttr.in. Do **not** use web
 curl -s "wttr.in/<CITY>?format=3"
 ```
 Examples: `curl -s "wttr.in/Rome?format=3"`, `curl -s "wttr.in/Tokyo?format=3"`. For more detail: `curl -s "wttr.in/Tokyo"`.
+
 
 
 
