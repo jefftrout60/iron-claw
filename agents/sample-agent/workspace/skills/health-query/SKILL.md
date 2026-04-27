@@ -26,7 +26,7 @@ Read the user's message and identify which intent applies:
 |--------|-----------------|--------|
 | 1 — Lab query | "what's my ferritin", "show me my A1c trend", "my cholesterol", "LDL over the last year" | exec lab-trend, synthesize |
 | 2 — Oura query | "how's my HRV", "last week's sleep", "readiness score", "Oura", "recovery score", "how did I sleep" | exec oura-window, synthesize |
-| 3 — Knowledge search | "what does Attia say about X", "trusted sources on Y", "what does the research say about Z" | exec search, web fallback if thin |
+| 3 — Knowledge search | "what does Attia say about X", "trusted sources on Y", "what does the research say about Z", "what do my podcast summaries say about X", "what have I learned from podcasts about Y", "what do my summaries say" | exec search, web fallback if thin |
 | 4 — Web contrast | "do a web search on that", "contrast with web", "what does the internet say" | web_search, contrast prior trusted answer |
 | 5 — Weekly summary on-demand | "give me my weekly summary", "weekly health report", "send my health summary" | pipeline: oura-window + cost + email |
 | 6 — Set up weekly cron | "set up my weekly summary", "schedule weekly health email", "automate weekly summary" | register Sunday 6 PM cron via cron tool |

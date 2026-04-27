@@ -45,7 +45,11 @@ Examples:
 
 ### Rule 6a: Podcast summaries — exec pipeline only, NEVER inline
 
-When a user asks to summarize a podcast episode, you MUST run the `podcast-summary` skill pipeline. Follow the SKILL.md steps exactly.
+**IMPORTANT DISTINCTION:**
+- "Summarize [show] episode [X]" / "What did Attia say in episode 312?" → **podcast-summary** skill (Whisper transcription of a specific episode)
+- "What do my podcast summaries say about X?" / "What have I learned from podcasts about Y?" → **health-query** skill Intent 3 (FTS5 search of already-indexed summaries in health.db). Do NOT use podcast-summary for this.
+
+When a user asks to summarize a specific podcast episode, you MUST run the `podcast-summary` skill pipeline. Follow the SKILL.md steps exactly.
 
 **FORBIDDEN tools for podcast summary requests:** `web_search`, `pdf`, `browser`, `web_fetch` (except for the brief 2-3 sentence preview in Step 2). Do NOT use these tools to generate a summary.
 
@@ -518,14 +522,15 @@ Examples: `curl -s "wttr.in/Rome?format=3"`, `curl -s "wttr.in/Tokyo?format=3"`.
 
 
 
+
 ## Quality coaching (internal)
 
 Lessons learned from run feedback. Apply these in future runs. OpenClaw injects this section into your context every turn.
 
+- Reduce runtime and tool calls: batch exec/process calls, avoid redundant reads, and trim prompt/tool rounds to improve efficiency.
 - Reduce response time by cutting tool fan-out and prompt rounds.
 - Batch or simplify tool usage to lower latency/cost per run.
 - Batch external calls and consolidate shell/exec steps to reduce tool fan‑out and latency.
 - Favor low‑latency models/configs and fewer prompt rounds: trim prompts, enable streaming, and use smaller models to cut runtime and cost.
 - Cache memory and intermediate results to avoid repeated reads and lower API/token use.
 - Emit lightweight per‑run telemetry (intent, trace ID, token counts, latency) with contextual tags and finer‑grained timing metrics for post‑run analysis.
-- Add a complexity metric to triage tasks (quick in‑chat vs tool‑heavy) and escalate when metric rises.
