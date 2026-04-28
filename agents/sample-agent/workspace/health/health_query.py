@@ -3,9 +3,10 @@
 health_query.py — Read-only query interface for health.db.
 
 Subcommands (all output JSON to stdout):
-  lab-trend    --marker NAME [--months N]
-  oura-window  [--metric NAME | --all] [--days N]
-  search       --query TEXT [--limit N]
+  lab-trend       --marker NAME [--months N]
+  oura-window     [--metric NAME | --all] [--days N]
+  search          --query TEXT [--limit N]
+  blood-pressure  [--days N] [--start YYYY-MM-DD] [--end YYYY-MM-DD]
 
 Exit 0 on success, exit 1 with {"error": "..."} JSON on failure.
 """
@@ -162,6 +163,98 @@ def oura_window(days: int, metric: str | None, all_cols: bool) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# blood-pressure
+# ---------------------------------------------------------------------------
+
+def _group_sessions(rows: list, gap_minutes: int = 30) -> list:
+    """Group BP readings into sessions separated by gaps > gap_minutes."""
+    if not rows:
+        return []
+
+    from datetime import datetime
+
+    # Sort by (date, time) ascending — rows may already be sorted but be safe
+    sorted_rows = sorted(rows, key=lambda r: (r["date"], r["time"]))
+
+    sessions = []
+    current: list = [sorted_rows[0]]
+
+    for row in sorted_rows[1:]:
+        prev = current[-1]
+        prev_dt = datetime.fromisoformat(f"{prev['date']}T{prev['time']}")
+        curr_dt = datetime.fromisoformat(f"{row['date']}T{row['time']}")
+        gap = (curr_dt - prev_dt).total_seconds() / 60
+
+        if gap <= gap_minutes:
+            current.append(row)
+        else:
+            sessions.append(_make_session(current))
+            current = [row]
+
+    sessions.append(_make_session(current))
+    return sessions
+
+
+def _make_session(rows: list) -> dict:
+    first_time = rows[0]["time"]
+    last_time = rows[-1]["time"]
+    time_range = first_time if len(rows) == 1 else f"{first_time} – {last_time}"
+
+    readings = [
+        {"time": r["time"], "systolic": r["systolic"],
+         "diastolic": r["diastolic"], "pulse": r["pulse"]}
+        for r in rows
+    ]
+
+    return {
+        "date": rows[0]["date"],
+        "time_range": time_range,
+        "readings": readings,
+        "avg_systolic": round(sum(r["systolic"] for r in rows) / len(rows), 1),
+        "avg_diastolic": round(sum(r["diastolic"] for r in rows) / len(rows), 1),
+        "avg_pulse": round(sum(r["pulse"] for r in rows if r["pulse"] is not None) /
+                           max(sum(1 for r in rows if r["pulse"] is not None), 1), 1),
+    }
+
+
+def blood_pressure(days: int, start: str | None, end: str | None) -> dict:
+    conn = health_db.get_connection()
+
+    end_date = end if end else date.today().isoformat()
+    start_date = start if start else (date.today() - timedelta(days=days)).isoformat()
+
+    rows = conn.execute(
+        "SELECT date, time, systolic, diastolic, pulse FROM blood_pressure"
+        " WHERE date >= ? AND date <= ? ORDER BY date ASC, time ASC",
+        (start_date, end_date),
+    ).fetchall()
+
+    if not rows:
+        _err(f"no blood pressure data in last {days} days")
+
+    sessions = _group_sessions(rows)
+
+    all_systolic = [r["systolic"] for r in rows]
+    all_diastolic = [r["diastolic"] for r in rows]
+    all_pulse = [r["pulse"] for r in rows if r["pulse"] is not None]
+
+    summary = {
+        "avg_systolic": round(sum(all_systolic) / len(all_systolic), 1),
+        "avg_diastolic": round(sum(all_diastolic) / len(all_diastolic), 1),
+        "avg_pulse": round(sum(all_pulse) / len(all_pulse), 1) if all_pulse else None,
+        "min_systolic": min(all_systolic),
+        "max_systolic": max(all_systolic),
+    }
+
+    return {
+        "days_requested": days,
+        "sessions": len(sessions),
+        "data": sessions,
+        "summary": summary,
+    }
+
+
+# ---------------------------------------------------------------------------
 # search
 # ---------------------------------------------------------------------------
 
@@ -227,6 +320,11 @@ def main() -> None:
     se.add_argument("--query", required=True, help="Full-text search query")
     se.add_argument("--limit", type=int, default=5, help="Max results to return")
 
+    bp = sub.add_parser("blood-pressure", help="Blood pressure session averages")
+    bp.add_argument("--days", type=int, default=30)
+    bp.add_argument("--start", help="Start date YYYY-MM-DD (overrides --days)")
+    bp.add_argument("--end", help="End date YYYY-MM-DD (default: today)")
+
     args = parser.parse_args()
 
     if args.command == "lab-trend":
@@ -235,6 +333,8 @@ def main() -> None:
         result = oura_window(args.days, args.metric, args.all_cols)
     elif args.command == "search":
         result = search_knowledge(args.query, args.limit)
+    elif args.command == "blood-pressure":
+        result = blood_pressure(args.days, args.start, args.end)
     _out(result)
 
 
