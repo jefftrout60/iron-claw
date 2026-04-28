@@ -11,8 +11,6 @@ Usage:
   python3.13 scripts/bp-report.py --start 2026-01-01 --end 2026-04-28 --output bp_jan_apr.html
 """
 
-from __future__ import annotations
-
 import argparse
 import html
 import statistics
@@ -190,10 +188,9 @@ def build_html(start: str, end: str, rows: list) -> str:
 
     # Build sessions table rows
     session_rows_html = []
-    for i, s in enumerate(sessions):
-        cls = ' class="even"' if i % 2 == 1 else ""
+    for s in sessions:
         session_rows_html.append(
-            f"<tr{cls}>"
+            f"<tr>"
             f"<td>{html.escape(s['date'])}</td>"
             f"<td>{html.escape(s['time_range'])}</td>"
             f"<td style='text-align:center'>{len(s['readings'])}</td>"
@@ -205,10 +202,9 @@ def build_html(start: str, end: str, rows: list) -> str:
 
     # Build individual readings table rows
     reading_rows_html = []
-    for i, r in enumerate(rows):
-        cls = ' class="even"' if i % 2 == 1 else ""
+    for r in rows:
         reading_rows_html.append(
-            f"<tr{cls}>"
+            f"<tr>"
             f"<td>{html.escape(r['date'])}</td>"
             f"<td>{html.escape(r['time'])}</td>"
             f"<td style='text-align:center'>{r['systolic']}</td>"

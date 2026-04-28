@@ -17,7 +17,7 @@ import argparse
 import json
 import sqlite3
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -171,8 +171,6 @@ def _group_sessions(rows: list, gap_minutes: int = 30) -> list:
     if not rows:
         return []
 
-    from datetime import datetime
-
     # Sort by (date, time) ascending — rows may already be sorted but be safe
     sorted_rows = sorted(rows, key=lambda r: (r["date"], r["time"]))
 
@@ -213,7 +211,8 @@ def _make_session(rows: list) -> dict:
         "avg_systolic": round(sum(r["systolic"] for r in rows) / len(rows), 1),
         "avg_diastolic": round(sum(r["diastolic"] for r in rows) / len(rows), 1),
         "avg_pulse": round(sum(r["pulse"] for r in rows if r["pulse"] is not None) /
-                           max(sum(1 for r in rows if r["pulse"] is not None), 1), 1),
+                           sum(1 for r in rows if r["pulse"] is not None), 1)
+                    if any(r["pulse"] is not None for r in rows) else None,
     }
 
 
@@ -230,7 +229,8 @@ def blood_pressure(days: int, start: str | None, end: str | None) -> dict:
     ).fetchall()
 
     if not rows:
-        _err(f"no blood pressure data in last {days} days")
+        range_desc = f"{start_date} to {end_date}" if start else f"last {days} days"
+        _err(f"no blood pressure data in {range_desc}")
 
     sessions = _group_sessions(rows)
 
@@ -261,21 +261,18 @@ def blood_pressure(days: int, start: str | None, end: str | None) -> dict:
 def bp_log(systolic: int, diastolic: int, pulse: int | None,
            reading_date: str, reading_time: str, notes: str | None) -> dict:
     conn = health_db.get_connection()
-    try:
-        conn.execute(
-            """INSERT INTO blood_pressure
-               (date, time, systolic, diastolic, pulse, source, notes)
-               VALUES (?, ?, ?, ?, ?, 'imessage', ?)
-               ON CONFLICT(date, time) DO UPDATE SET
-                 systolic  = excluded.systolic,
-                 diastolic = excluded.diastolic,
-                 pulse     = excluded.pulse,
-                 notes     = excluded.notes""",
-            (reading_date, reading_time, systolic, diastolic, pulse, notes),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    conn.execute(
+        """INSERT INTO blood_pressure
+           (date, time, systolic, diastolic, pulse, source, notes)
+           VALUES (?, ?, ?, ?, ?, 'imessage', ?)
+           ON CONFLICT(date, time) DO UPDATE SET
+             systolic  = excluded.systolic,
+             diastolic = excluded.diastolic,
+             pulse     = excluded.pulse,
+             notes     = excluded.notes""",
+        (reading_date, reading_time, systolic, diastolic, pulse, notes),
+    )
+    conn.commit()
     return {
         "logged": True,
         "date": reading_date,

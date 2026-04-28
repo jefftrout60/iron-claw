@@ -11,8 +11,6 @@ Usage:
   python3.13 scripts/import-blood-pressure.py --file report.csv
 """
 
-from __future__ import annotations
-
 import argparse
 import csv
 import sys
