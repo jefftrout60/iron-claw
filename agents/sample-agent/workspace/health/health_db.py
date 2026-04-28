@@ -242,4 +242,27 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         )
     """)
 
+    # ---------- blood_pressure ------------------------------------------
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS blood_pressure (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            date        TEXT NOT NULL,
+            time        TEXT NOT NULL,
+            systolic    INTEGER NOT NULL,
+            diastolic   INTEGER NOT NULL,
+            pulse       INTEGER,
+            source      TEXT DEFAULT 'manual',
+            notes       TEXT,
+            imported_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        )
+    """)
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_bp_datetime
+        ON blood_pressure(date, time)
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_bp_date
+        ON blood_pressure(date)
+    """)
+
     conn.commit()
