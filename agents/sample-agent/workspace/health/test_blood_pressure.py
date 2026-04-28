@@ -210,6 +210,65 @@ class TestBloodPressureEmptyTable(BPTestCase):
 
 
 # ---------------------------------------------------------------------------
+# bp_log — data mutation tests
+# ---------------------------------------------------------------------------
+
+class TestBpLog(BPTestCase):
+    """Behavioural tests for bp_log(): insert, upsert, NULL pulse, notes."""
+
+    def test_happy_path_inserts_correctly(self):
+        result = health_query.bp_log(133, 68, 55, "2026-04-28", "18:12", None)
+        # Return dict assertions
+        self.assertTrue(result["logged"])
+        self.assertEqual(result["date"], "2026-04-28")
+        self.assertEqual(result["time"], "18:12")
+        self.assertEqual(result["systolic"], 133)
+        self.assertEqual(result["diastolic"], 68)
+        self.assertEqual(result["pulse"], 55)
+        # Row actually landed in the DB with source='imessage'
+        row = self.conn.execute(
+            "SELECT source FROM blood_pressure WHERE date='2026-04-28' AND time='18:12'"
+        ).fetchone()
+        self.assertIsNotNone(row, "Row should exist in DB after bp_log()")
+        self.assertEqual(row["source"], "imessage")
+
+    def test_pulse_none_stored_as_null(self):
+        result = health_query.bp_log(120, 80, None, "2026-04-28", "09:00", None)
+        self.assertIsNone(result["pulse"])
+        row = self.conn.execute(
+            "SELECT pulse FROM blood_pressure WHERE date='2026-04-28' AND time='09:00'"
+        ).fetchone()
+        self.assertIsNotNone(row, "Row should exist in DB")
+        self.assertIsNone(row["pulse"], "pulse column should be NULL in DB")
+
+    def test_on_conflict_updates_existing_row(self):
+        # Pre-insert a row at the same (date, time) with different values
+        self.conn.execute(
+            "INSERT INTO blood_pressure (date, time, systolic, diastolic, pulse, source)"
+            " VALUES ('2026-04-28', '09:00', 120, 78, 65, 'imessage')"
+        )
+        self.conn.commit()
+        # Now upsert with new values at the same key
+        health_query.bp_log(125, 82, 60, "2026-04-28", "09:00", None)
+        rows = self.conn.execute(
+            "SELECT systolic, diastolic FROM blood_pressure"
+            " WHERE date='2026-04-28' AND time='09:00'"
+        ).fetchall()
+        # Only one row should exist (no duplicate)
+        self.assertEqual(len(rows), 1, "ON CONFLICT should update, not insert a duplicate")
+        self.assertEqual(rows[0]["systolic"], 125)
+        self.assertEqual(rows[0]["diastolic"], 82)
+
+    def test_notes_stored_when_provided(self):
+        health_query.bp_log(133, 68, 55, "2026-04-29", "10:00", "after coffee")
+        row = self.conn.execute(
+            "SELECT notes FROM blood_pressure WHERE date='2026-04-29' AND time='10:00'"
+        ).fetchone()
+        self.assertIsNotNone(row, "Row should exist in DB")
+        self.assertEqual(row["notes"], "after coffee")
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
