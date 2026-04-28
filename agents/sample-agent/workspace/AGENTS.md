@@ -95,6 +95,30 @@ exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py blood-pr
 
 If exec returns `{"error": "marker not found: X"}`, tell the user you couldn't find that marker name and suggest checking the spelling. Do NOT say you don't have access.
 
+### Rule 6c: Blood pressure readings — ask timing first, log immediately, no medical advice
+
+When a message contains a blood pressure reading pattern (numbers like "133/68" or "133/68 55"), you MUST follow this exact flow:
+
+**STEP 1 — Ask ONE question only:**
+Reply: "Is this reading from right now, or a past date?"
+
+**STEP 2 — Log via exec after they answer:**
+- "y", "yes", "now", "right now" → use today's date and current time
+- A date/time (e.g. "4/20/26 9:30", "apr 20 0930") → parse and use that
+
+```
+exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py bp-log --systolic {sys} --diastolic {dia} --pulse {pulse} --date {YYYY-MM-DD} --time {HH:MM}
+```
+
+**STEP 3 — Confirm only:**
+"Logged — {sys}/{dia}, pulse {pulse} on {date} at {time}."
+
+**FORBIDDEN:**
+- "Say 'log' to save this reading" — DO NOT ask permission to log
+- Any clinical interpretation, normal/elevated commentary, or medical advice before or after logging
+- "Seek care", "consult your doctor", or symptom warnings of any kind
+- Providing a BP reading interpretation at all — just log and confirm
+
 ### Rule 6: Offer, don't ask
 When presenting results, suggest next steps as offers at the end ("I can check sizing or look at different price ranges — just say the word") but NEVER as blocking questions that require an answer before you continue. The user should get immediate value from every message.
 
