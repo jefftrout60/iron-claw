@@ -30,7 +30,8 @@ Read the user's message and identify which intent applies:
 | 4 — Web contrast | "do a web search on that", "contrast with web", "what does the internet say" | web_search, contrast prior trusted answer |
 | 5 — Weekly summary on-demand | "give me my weekly summary", "weekly health report", "send my health summary" | pipeline: oura-window + cost + email |
 | 6 — Set up weekly cron | "set up my weekly summary", "schedule weekly health email", "automate weekly summary" | register Sunday 6 PM cron via cron tool |
-| 7 — Blood pressure | "my blood pressure", "BP readings", "systolic", "diastolic", "BP trend", "blood pressure last N days" | exec blood-pressure, synthesize |
+| 7 — BP entry | message matches pattern NNN/NN or NNN/NN NN (a reading, e.g. "133/68 55") | ask now-or-past, then exec bp-log |
+| 8 — BP query | "my blood pressure", "BP readings", "systolic", "diastolic", "BP trend", "blood pressure last N days" | exec blood-pressure, synthesize |
 
 ---
 
@@ -239,9 +240,47 @@ Reply via iMessage: "Weekly summary sent to your email."
 
 ---
 
-## Intent 7 — Blood Pressure Query
+## Intent 7 — Blood Pressure Entry (logging a new reading)
 
-**Trigger:** User asks about their blood pressure readings or trends.
+**Trigger:** User's message matches a blood pressure reading pattern — numbers in NNN/NN or NNN/NN NN format (e.g. "133/68", "133/68 55", "118/78 62").
+
+### STEP 1 — Confirm timing (reply, mandatory)
+
+Ask ONE question before logging:
+
+"Is this reading from right now, or a past date?"
+
+Do NOT offer other options. Do NOT provide clinical commentary at this stage. Wait for the reply.
+
+### STEP 2 — Resolve timestamp
+
+- If user replies "y", "yes", "now", or similar → use current date and time
+- If user replies a date/time (e.g. "4/20/26 9:30am", "apr 20 0930") → parse it into YYYY-MM-DD and HH:MM
+
+### STEP 3 — Log via exec (exec, mandatory)
+
+```
+exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py bp-log --systolic {sys} --diastolic {dia} --pulse {pulse} --date {YYYY-MM-DD} --time {HH:MM}
+```
+
+Omit `--pulse` if not provided.
+
+### STEP 4 — Confirm (reply, mandatory)
+
+Reply briefly: "Logged — {sys}/{dia}, pulse {pulse} on {date} at {time}."
+
+Optionally offer (non-blocking, no question mark required): "I can pull your recent BP trend if you'd like."
+
+**Hard rules:**
+- NEVER provide medical advice, symptom warnings, or "seek care" language
+- NEVER ask "want me to log this?" — just confirm timing and log
+- NEVER reply with raw JSON
+
+---
+
+## Intent 8 — Blood Pressure Query
+
+**Trigger:** User asks about their blood pressure history or trends.
 
 ### STEP 1 — Query blood pressure data (exec, mandatory)
 
@@ -260,14 +299,14 @@ Examples:
 ### STEP 2 — Synthesize and reply (reply, mandatory)
 
 Parse the JSON output and reply in natural language. Include:
-- Most recent session: date, average reading (e.g., "142/83")
+- Most recent session: date, average reading (e.g. "133/68")
 - Trend direction over the period (improving, stable, worsening)
 - Overall period average systolic and diastolic
-- Note if any session had systolic > 140 or diastolic > 90 (without being alarmist)
+- If any session had notably elevated readings, mention it matter-of-factly (no advice, no urgency)
 
-**If exec returns an error or no data:** Tell the user plainly — "I don't have any blood pressure readings in that window."
+**Hard rules: NEVER reply with raw JSON. NEVER mention script paths. NEVER provide medical advice or symptom warnings.**
 
-**Hard rule: NEVER reply with raw JSON. NEVER mention script paths.**
+**If exec returns an error or no data:** "I don't have any blood pressure readings in that window."
 
 ---
 

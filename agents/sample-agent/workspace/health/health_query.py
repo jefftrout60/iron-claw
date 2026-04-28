@@ -255,6 +255,38 @@ def blood_pressure(days: int, start: str | None, end: str | None) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# bp-log  (single reading insert for iMessage entry flow)
+# ---------------------------------------------------------------------------
+
+def bp_log(systolic: int, diastolic: int, pulse: int | None,
+           reading_date: str, reading_time: str, notes: str | None) -> dict:
+    conn = health_db.get_connection()
+    try:
+        conn.execute(
+            """INSERT INTO blood_pressure
+               (date, time, systolic, diastolic, pulse, source, notes)
+               VALUES (?, ?, ?, ?, ?, 'imessage', ?)
+               ON CONFLICT(date, time) DO UPDATE SET
+                 systolic  = excluded.systolic,
+                 diastolic = excluded.diastolic,
+                 pulse     = excluded.pulse,
+                 notes     = excluded.notes""",
+            (reading_date, reading_time, systolic, diastolic, pulse, notes),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {
+        "logged": True,
+        "date": reading_date,
+        "time": reading_time,
+        "systolic": systolic,
+        "diastolic": diastolic,
+        "pulse": pulse,
+    }
+
+
+# ---------------------------------------------------------------------------
 # search
 # ---------------------------------------------------------------------------
 
@@ -325,6 +357,14 @@ def main() -> None:
     bp.add_argument("--start", help="Start date YYYY-MM-DD (overrides --days)")
     bp.add_argument("--end", help="End date YYYY-MM-DD (default: today)")
 
+    lg = sub.add_parser("bp-log", help="Log a single blood pressure reading")
+    lg.add_argument("--systolic", type=int, required=True)
+    lg.add_argument("--diastolic", type=int, required=True)
+    lg.add_argument("--pulse", type=int, default=None)
+    lg.add_argument("--date", dest="reading_date", required=True, help="YYYY-MM-DD")
+    lg.add_argument("--time", dest="reading_time", required=True, help="HH:MM")
+    lg.add_argument("--notes", default=None)
+
     args = parser.parse_args()
 
     if args.command == "lab-trend":
@@ -335,6 +375,9 @@ def main() -> None:
         result = search_knowledge(args.query, args.limit)
     elif args.command == "blood-pressure":
         result = blood_pressure(args.days, args.start, args.end)
+    elif args.command == "bp-log":
+        result = bp_log(args.systolic, args.diastolic, args.pulse,
+                        args.reading_date, args.reading_time, args.notes)
     _out(result)
 
 
