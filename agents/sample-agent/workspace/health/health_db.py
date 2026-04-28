@@ -44,6 +44,7 @@ def get_connection(db_path: Path | None = None) -> sqlite3.Connection:
     conn.execute("PRAGMA synchronous = NORMAL")
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA cache_size = -32768")  # 32 MB page cache
+    conn.execute("PRAGMA busy_timeout = 5000")   # wait up to 5s on writer collision
     conn.row_factory = sqlite3.Row
 
     initialize_schema(conn)
