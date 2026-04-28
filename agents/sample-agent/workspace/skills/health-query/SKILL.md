@@ -30,6 +30,7 @@ Read the user's message and identify which intent applies:
 | 4 — Web contrast | "do a web search on that", "contrast with web", "what does the internet say" | web_search, contrast prior trusted answer |
 | 5 — Weekly summary on-demand | "give me my weekly summary", "weekly health report", "send my health summary" | pipeline: oura-window + cost + email |
 | 6 — Set up weekly cron | "set up my weekly summary", "schedule weekly health email", "automate weekly summary" | register Sunday 6 PM cron via cron tool |
+| 7 — Blood pressure | "my blood pressure", "BP readings", "systolic", "diastolic", "BP trend", "blood pressure last N days" | exec blood-pressure, synthesize |
 
 ---
 
@@ -165,7 +166,15 @@ exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py oura-win
 
 Save the output — it is used in Step 3 to build the email body.
 
-### STEP 2 — Fetch month-to-date AI spend (exec, mandatory)
+### STEP 2 — Fetch blood pressure data (exec, mandatory)
+
+```
+exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py blood-pressure --days 7
+```
+
+Save the output — it is used in Step 4 to build the BP section of the email body.
+
+### STEP 3 — Fetch month-to-date AI spend (exec, mandatory)
 
 ```
 exec: python3 /home/openclaw/.openclaw/workspace/health/cost_summary.py --month
@@ -173,7 +182,7 @@ exec: python3 /home/openclaw/.openclaw/workspace/health/cost_summary.py --month
 
 Save the cost total — it goes in the email footer.
 
-### STEP 3 — Synthesize the email body (mandatory)
+### STEP 4 — Synthesize the email body (mandatory)
 
 Build a plain-text email with this structure:
 
@@ -190,6 +199,11 @@ PATTERNS THIS WEEK
 
 {2–3 sentence narrative on what the data shows — what stands out, any trends worth noting}
 
+BLOOD PRESSURE
+
+{7-day session averages: one line per session showing date and avg reading (e.g., "Apr 21: 138/82")}
+{one-line trend: improving / stable / worsening based on the period}
+
 SUGGESTIONS FOR NEXT WEEK
 
 - {suggestion 1 based on the data}
@@ -200,28 +214,60 @@ SUGGESTIONS FOR NEXT WEEK
 Month-to-date AI spend: ${cost_usd}
 ```
 
-Use the Oura data from Step 1 and the cost figure from Step 2. Derive the date range from the data.
+Use the Oura data from Step 1, BP data from Step 2, and the cost figure from Step 3. Derive the date range from the data. If the BP exec returned no data for the 7-day window, omit the BLOOD PRESSURE section entirely.
 
-### STEP 4 — Write the email body to a temp file (write, mandatory)
+### STEP 5 — Write the email body to a temp file (write, mandatory)
 
-Use the `write` tool to write the synthesized email body (from Step 3) to a temp file:
+Use the `write` tool to write the synthesized email body (from Step 4) to a temp file:
 
 ```
 write: /tmp/health_weekly.txt
-content: {full email body from Step 3}
+content: {full email body from Step 4}
 ```
 
-### STEP 5 — Send the email (exec, mandatory)
+### STEP 6 — Send the email (exec, mandatory)
 
 ```
 exec: bash /home/openclaw/.openclaw/workspace/scripts/send-email.sh jeff@armantrouts.net "Weekly Health Summary" /tmp/health_weekly.txt
 ```
 
-### STEP 6 — Confirm to user (reply, mandatory)
+### STEP 7 — Confirm to user (reply, mandatory)
 
 Reply via iMessage: "Weekly summary sent to your email."
 
 **If any step fails:** Tell the user plainly what went wrong (e.g. "I couldn't reach the Oura data — the sync may be behind") without exposing internals. Do not send a partial email.
+
+---
+
+## Intent 7 — Blood Pressure Query
+
+**Trigger:** User asks about their blood pressure readings or trends.
+
+### STEP 1 — Query blood pressure data (exec, mandatory)
+
+**YOU DO NOT KNOW THE USER'S BLOOD PRESSURE READINGS. DO NOT ANSWER WITHOUT RUNNING THIS EXEC. There is no other source of this data.**
+
+Default to the last 30 days unless the user specifies a different window.
+
+```
+exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py blood-pressure --days 30
+```
+
+Examples:
+- "show me my BP last 60 days" → `--days 60`
+- "blood pressure since January" → `--start 2026-01-01`
+
+### STEP 2 — Synthesize and reply (reply, mandatory)
+
+Parse the JSON output and reply in natural language. Include:
+- Most recent session: date, average reading (e.g., "142/83")
+- Trend direction over the period (improving, stable, worsening)
+- Overall period average systolic and diastolic
+- Note if any session had systolic > 140 or diastolic > 90 (without being alarmist)
+
+**If exec returns an error or no data:** Tell the user plainly — "I don't have any blood pressure readings in that window."
+
+**Hard rule: NEVER reply with raw JSON. NEVER mention script paths.**
 
 ---
 
