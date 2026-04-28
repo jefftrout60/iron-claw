@@ -1,0 +1,91 @@
+{
+  "version": "1.1",
+  "timestamp": "2026-04-27-110141",
+  "branch_name": "main",
+  "task_name": "health-query live debugging and skill enforcement",
+  "session_number": 7,
+  "continuity": {
+    "started": "2026-04-26",
+    "sessions_reviewed": 6,
+    "arc_goal": "Build unified Health SQLite database (health.db) with cross-pillar queries + complete read layer (health_query.py, cost_summary.py, health-query SKILL.md) so agent can answer 'how has my ApoB changed and what does Attia say about it' meaningfully via iMessage/BlueBubbles, with weekly email summaries and spend tracking."
+  },
+  "progress_update": {
+    "summary": "We debugged and fixed the health-query skill end-to-end. Resolved three routing failures: (1) agent used memory_search instead of exec — fixed by adding AGENTS.md Rule 6b with explicit forbidden phrases and exact exec paths; (2) agent answered from training data without calling any tool — fixed by adding per-intent 'YOU DO NOT KNOW THIS DATA' guards to SKILL.md; (3) 'what do my podcast summaries say about X' routed to podcast-summary Whisper transcription instead of health-query FTS5 search — fixed by adding IMPORTANT DISTINCTION comment to Rule 6a and expanding Intent 3 triggers. All fixes confirmed working via live iMessage tests. Also captured 3 new SPECTRE skills: gotchas-compose-up-cooldown, procedures-health-pillar-onboarding, and the compose-up cooldown gotcha.",
+    "goal": "Health intelligence read layer fully operational via iMessage — lab queries, Oura queries, podcast knowledge search, and web fallback all routing and executing correctly.",
+    "accomplished": [
+      "Fixed AGENTS.md Rule 6b: explicit forbidden responses + exact exec paths for lab and Oura queries — model now calls exec instead of answering from training data",
+      "Fixed health-query SKILL.md: added per-intent 'YOU DO NOT KNOW THIS DATA, DO NOT ANSWER WITHOUT EXEC' guards for Intent 1 (lab) and Intent 2 (Oura)",
+      "Fixed skill config sync: health-query was missing from config-runtime/openclaw.json after compose-up cooldown — added it and restarted",
+      "Fixed routing: 'what do my podcast summaries say about X' now routes to health-query Intent 3 (FTS5 search) not podcast-summary (Whisper transcription)",
+      "Confirmed live: A1c query returns actual DB values; podcast knowledge search correctly reports thin coverage and offers web fallback",
+      "Saved 3 new SPECTRE skills: gotchas-compose-up-cooldown, procedures-health-pillar-onboarding, patterns-sqlite-fts5-python v2",
+      "All changes committed and pushed to origin/main (commits 9152cb3, 0148889, 50a0b9f)"
+    ],
+    "now": "Session complete. Health-query skill fully operational. All routing issues resolved and confirmed via live iMessage.",
+    "next_steps": [
+      "Bulk ingest Attia/Huberman/Rhonda episodes to populate health knowledge index (currently ~12 episodes — thin for A1c/metabolic queries)",
+      "Next data pillar: blood pressure, DEXA, macros, or workouts — follow procedures-health-pillar-onboarding skill checklist",
+      "Consider DB migration runner (PRAGMA user_version) before adding more pillars",
+      "Architecture review from /spectre:evaluate (Session 6) may have completed — check docs/tasks/main/reviews/"
+    ],
+    "confidence": "high",
+    "constraints": [
+      "AGENTS.md Rule 6b must be updated whenever a new health data type is added — model will not exec without explicit forbidden phrases",
+      "compose-up.sh cooldown skips restart — always run 'docker restart sample-agent_secure' after config changes if cooldown fires",
+      "SKILL.md alone insufficient for personal data queries with GPT-5-mini — AGENTS.md rule with forbidden phrases is required",
+      "health knowledge index is thin (~12 episodes) — FTS5 search will fall back to Perplexity for most health topics until bulk ingestion",
+      "health_query.py runs inside agent container — paths must be container-relative (/home/openclaw/.openclaw/workspace/health/)",
+      "Python 3 only, no new pip deps beyond stdlib + sqlite3",
+      "health.db at workspace/health/health.db — imported via sys.path.insert",
+      "Perplexity already configured in openclaw.json, now enabled: true",
+      "Weekly summary email via send-email.sh (SMTP_FROM_EMAIL + GMAIL_APP_PASSWORD in .env)",
+      "BlueBubbles is sole active channel — Telegram disabled (config preserved)",
+      "All planning docs in ~/Code Projects/Health DB/ — NOT in ironclaw repo docs/tasks/"
+    ],
+    "decisions": [
+      "Podcast knowledge search ('what do my summaries say about X') routes to health-query FTS5, not podcast-summary Whisper — different pipelines for searching existing vs transcribing new",
+      "Rule 6b pattern confirmed: forbidden response phrases + exact exec commands in AGENTS.md is the reliable enforcement layer for GPT-5-mini personal data queries",
+      "Routing logic in SKILL.md not health_query.py — agent has conversational context for follow-up contrast flow",
+      "Email body via temp file write (/tmp/health_weekly.txt), not stdin piping — exec tool may not support stdin",
+      "FTS5 user input phrase-quoted (_fts_quote) to prevent operator injection; LIKE wildcards escaped with ESCAPE clause",
+      "Weekly summary cron task wording matches Intent 5 triggers exactly so cron re-entry routes correctly",
+      "health_store.py public API (append_entry, load_all, find_by_show) must be preserved — engine.py and on_demand.py cannot change",
+      "launchd oura sync uses StartCalendarInterval (batch/weekly) not KeepAlive (daemon) — different from whisper-server pattern",
+      "Blood lab import runs --dry-run first to handle unknown Excel layout quirks before committing",
+      "Jeff has Gen3 Oura ring — pull all endpoints including stress, resilience, VO2 max; handle 404s gracefully",
+      "Oura heartrate 'missing' data is an API limitation — not fixable, accepted as-is",
+      "daily_spo2 is the correct Oura v2 endpoint (not spo2); daily_hrv endpoint doesn't exist (HRV via sleep sessions avg_hrv)",
+      "All planning docs now live in ~/Code Projects/{Project Name}/ — not inside the ironclaw repo"
+    ],
+    "blockers": [],
+    "open_questions": [],
+    "risks": [
+      "AGENTS.md is already large (~48K chars system prompt) and gets ~17% truncated — Rule 6b entries must stay concise as more data pillars are added",
+      "Thin knowledge index means most health knowledge queries fall back to web — not wrong, but less useful than intended until bulk ingestion",
+      "cost_summary.py mtime-based filtering is an approximation — sessions that span midnight may be miscounted"
+    ]
+  },
+  "working_set": {
+    "key_files": [
+      "agents/sample-agent/workspace/AGENTS.md",
+      "agents/sample-agent/workspace/skills/health-query/SKILL.md",
+      "agents/sample-agent/config-runtime/openclaw.json",
+      "agents/sample-agent/workspace/health/health_query.py",
+      "agents/sample-agent/workspace/health/cost_summary.py",
+      "agents/sample-agent/workspace/health/health_db.py",
+      ".claude/skills/gotchas-compose-up-cooldown/SKILL.md",
+      ".claude/skills/procedures-health-pillar-onboarding/SKILL.md"
+    ],
+    "active_ids": [],
+    "recent_commands": [
+      "docker restart sample-agent_secure",
+      "./scripts/test-gateway-http.sh sample-agent",
+      "git push origin main"
+    ]
+  },
+  "context": {
+    "wip_state": "clean",
+    "last_commit": "50a0b9f",
+    "session_arc": "7-session sprint on health-db + health_query (Apr 26-27). S1 scoped health-db. S2 implemented phases 1-3 (SQLite, blood labs, Oura). S3 wrote tests + /spectre:clean. S4 clean/test/evaluate, fixed 3 architecture issues, pushed, disabled Telegram. S5 scoped health_query.py (3 subcommands, 6 intents), shipped raw_transcript storage. S6 executed health_query.py: built all 3 subcommands, cost_summary.py, health-query SKILL.md, enabled Perplexity, 88 tests passing, pushed 5 commits. S7 debugged live routing: fixed AGENTS.md Rule 6b enforcement, per-intent guardrails in SKILL.md, skill config sync issue, and intent triggers. All routing confirmed working via iMessage. Architecture is solid; next step is bulk knowledge ingestion."
+  }
+}
