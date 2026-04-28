@@ -17,11 +17,12 @@ import argparse
 import json
 import sqlite3
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import health_db
+from bp_sessions import group_sessions
 
 
 def _out(data: dict) -> None:
@@ -166,55 +167,6 @@ def oura_window(days: int, metric: str | None, all_cols: bool) -> dict:
 # blood-pressure
 # ---------------------------------------------------------------------------
 
-def _group_sessions(rows: list, gap_minutes: int = 30) -> list:
-    """Group BP readings into sessions separated by gaps > gap_minutes."""
-    if not rows:
-        return []
-
-    # Sort by (date, time) ascending — rows may already be sorted but be safe
-    sorted_rows = sorted(rows, key=lambda r: (r["date"], r["time"]))
-
-    sessions = []
-    current: list = [sorted_rows[0]]
-
-    for row in sorted_rows[1:]:
-        prev = current[-1]
-        prev_dt = datetime.fromisoformat(f"{prev['date']}T{prev['time']}")
-        curr_dt = datetime.fromisoformat(f"{row['date']}T{row['time']}")
-        gap = (curr_dt - prev_dt).total_seconds() / 60
-
-        if gap <= gap_minutes:
-            current.append(row)
-        else:
-            sessions.append(_make_session(current))
-            current = [row]
-
-    sessions.append(_make_session(current))
-    return sessions
-
-
-def _make_session(rows: list) -> dict:
-    first_time = rows[0]["time"]
-    last_time = rows[-1]["time"]
-    time_range = first_time if len(rows) == 1 else f"{first_time} – {last_time}"
-
-    readings = [
-        {"time": r["time"], "systolic": r["systolic"],
-         "diastolic": r["diastolic"], "pulse": r["pulse"]}
-        for r in rows
-    ]
-
-    return {
-        "date": rows[0]["date"],
-        "time_range": time_range,
-        "readings": readings,
-        "avg_systolic": round(sum(r["systolic"] for r in rows) / len(rows), 1),
-        "avg_diastolic": round(sum(r["diastolic"] for r in rows) / len(rows), 1),
-        "avg_pulse": round(sum(r["pulse"] for r in rows if r["pulse"] is not None) /
-                           sum(1 for r in rows if r["pulse"] is not None), 1)
-                    if any(r["pulse"] is not None for r in rows) else None,
-    }
-
 
 def blood_pressure(days: int, start: str | None, end: str | None) -> dict:
     conn = health_db.get_connection()
@@ -232,7 +184,7 @@ def blood_pressure(days: int, start: str | None, end: str | None) -> dict:
         range_desc = f"{start_date} to {end_date}" if start else f"last {days} days"
         _err(f"no blood pressure data in {range_desc}")
 
-    sessions = _group_sessions(rows)
+    sessions = group_sessions(rows)
 
     all_systolic = [r["systolic"] for r in rows]
     all_diastolic = [r["diastolic"] for r in rows]

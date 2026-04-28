@@ -22,57 +22,7 @@ _REPO_ROOT = Path(__file__).parent.parent
 _HEALTH_DIR = _REPO_ROOT / "agents/sample-agent/workspace/health"
 sys.path.insert(0, str(_HEALTH_DIR))
 import health_db
-
-
-# ---------------------------------------------------------------------------
-# Session grouping (mirrors health_query.py _group_sessions / _make_session)
-# ---------------------------------------------------------------------------
-
-def _group_sessions(rows: list, gap_minutes: int = 30) -> list:
-    """Group BP readings into sessions separated by gaps > gap_minutes."""
-    if not rows:
-        return []
-
-    sorted_rows = sorted(rows, key=lambda r: (r["date"], r["time"]))
-    sessions = []
-    current: list = [sorted_rows[0]]
-
-    for row in sorted_rows[1:]:
-        prev = current[-1]
-        prev_dt = datetime.fromisoformat(f"{prev['date']}T{prev['time']}")
-        curr_dt = datetime.fromisoformat(f"{row['date']}T{row['time']}")
-        gap = (curr_dt - prev_dt).total_seconds() / 60
-
-        if gap <= gap_minutes:
-            current.append(row)
-        else:
-            sessions.append(_make_session(current))
-            current = [row]
-
-    sessions.append(_make_session(current))
-    return sessions
-
-
-def _make_session(rows: list) -> dict:
-    first_time = rows[0]["time"]
-    last_time = rows[-1]["time"]
-    time_range = first_time if len(rows) == 1 else f"{first_time} – {last_time}"
-
-    readings = [
-        {"time": r["time"], "systolic": r["systolic"],
-         "diastolic": r["diastolic"], "pulse": r["pulse"]}
-        for r in rows
-    ]
-    pulse_vals = [r["pulse"] for r in rows if r["pulse"] is not None]
-
-    return {
-        "date": rows[0]["date"],
-        "time_range": time_range,
-        "readings": readings,
-        "avg_systolic": round(sum(r["systolic"] for r in rows) / len(rows), 1),
-        "avg_diastolic": round(sum(r["diastolic"] for r in rows) / len(rows), 1),
-        "avg_pulse": round(sum(pulse_vals) / len(pulse_vals), 1) if pulse_vals else None,
-    }
+from bp_sessions import group_sessions
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +120,7 @@ def _pulse_str(val) -> str:
 
 
 def build_html(start: str, end: str, rows: list) -> str:
-    sessions = _group_sessions(rows)
+    sessions = group_sessions(rows)
 
     all_systolic = [r["systolic"] for r in rows]
     all_diastolic = [r["diastolic"] for r in rows]
@@ -338,7 +288,7 @@ def main() -> None:
         print(f"No blood pressure data found between {args.start} and {args.end}.", file=sys.stderr)
         sys.exit(1)
 
-    # Convert sqlite3.Row objects to plain dicts so _group_sessions can subscript freely
+    # Convert sqlite3.Row objects to plain dicts so group_sessions can subscript freely
     rows = [dict(r) for r in rows]
 
     html_content = build_html(args.start, args.end, rows)
