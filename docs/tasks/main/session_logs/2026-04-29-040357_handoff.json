@@ -1,0 +1,85 @@
+{
+  "version": "1.1",
+  "timestamp": "2026-04-29-040357",
+  "branch_name": "main",
+  "task_name": "Apple Health Multi-Source Health Data Import",
+  "session_number": 9,
+  "continuity": {
+    "started": "2026-04-26",
+    "sessions_reviewed": 3,
+    "arc_goal": "Consolidate Withings, Apple Health, Evernote, and Oura tag data into health.db to enable cross-pillar correlation queries via iMessage (HRV vs workout intensity, BP vs sleep, body fat% vs BP trend, sauna tags vs recovery metrics). Multi-session data source integration on top of working read layer (health_query.py, cost_summary.py, health-query SKILL.md) with BP pillar complete, weekly email, and spend tracking."
+  },
+  "progress_update": {
+    "summary": "We scoped and planned a multi-source health data import system, then executed the first piece: Withings API integration. Scoping session defined 4 data sources (Withings API, Apple Health XML, Evernote ENEX, Oura tags) and 3 delivery sessions (Option A: Withings → Apple Health → Evernote+Oura). Full plan and task breakdown generated in docs/tasks/main/specs/. Then built withings-auth.py (one-time OAuth2 token exchange) and withings-sync.py (daily body composition cron mirroring oura-sync.py exactly), hit and fixed an SSL cert issue on macOS (switched from urllib to requests), and successfully ran --historical import: 154 unique weigh-in dates from May 2025–April 2026 now in body_metrics table.",
+    "goal": "Consolidate Withings, Apple Health, Evernote, and Oura tag data into health.db to enable cross-pillar correlation queries via iMessage (HRV vs workout intensity, BP vs sleep, body fat% vs BP trend, sauna tags vs recovery metrics).",
+    "accomplished": [
+      "Scoped feature across 4 data sources; created docs/tasks/main/concepts/scope_apple_health_multi_source.md",
+      "Full research (4 parallel agents): Withings API OAuth quirks, Apple Health XML identifiers, Evernote ENEX format, codebase patterns — all documented",
+      "Comprehensive plan at docs/tasks/main/specs/plan.md (3-session Option A delivery)",
+      "32 sub-task breakdown at docs/tasks/main/specs/tasks.md (20 parent tasks, phases A/B/C)",
+      "Added PRAGMA user_version migration framework to health_db.py; added body_metrics table (schema version 2)",
+      "Built scripts/withings-auth.py — one-time OAuth2 token exchange (fixed SSL cert issue using requests instead of urllib)",
+      "Built scripts/withings-sync.py — daily cron mirroring oura-sync.py exactly; 154 rows imported successfully, May 2025–April 2026"
+    ],
+    "now": "Session A partially complete. Withings sync is live with real data. Remaining Session A tasks: body-metrics subcommand in health_query.py (task 1.5), Rule 6b extension in AGENTS.md (task 1.6), unit tests (task 1.7). Ready for /spectre:execute on these remaining tasks.",
+    "next_steps": [
+      "Run /spectre:execute to complete remaining Session A tasks: body-metrics query subcommand, Rule 6b wiring, tests",
+      "Session B: Apple Health XML import (all categories: BP, weight, body fat, steps, daylight, workouts)",
+      "Session C: Evernote ENEX parser + Oura tags + full SKILL.md/AGENTS.md wiring"
+    ],
+    "confidence": "high",
+    "constraints": [
+      "Withings OAuth tokens in agents/sample-agent/.env — access token expires ~3h, withings-sync.py refreshes proactively",
+      "body_metrics table now at schema version 2 (PRAGMA user_version = 2)",
+      "Apple Health XML export drop folder: ~/Downloads/apple_health_export/export.xml",
+      "Evernote: manual ENEX export only (API closed); filter by title regex 'Week \\d+ Training Plan'; Jan 2025 forward",
+      "All body measurements in lbs (kg converted on import); Withings API source takes priority over apple_health in body_metrics",
+      "AGENTS.md already ~48K chars (~17% truncated) — new Rule 6b blocks must be concise (≤4 lines each)",
+      "withings-auth.py uses requests (not urllib) to avoid macOS SSL cert issue",
+      "health_query.py runs inside agent container — paths must be container-relative",
+      "Python 3 only, no jq, no new pip deps beyond stdlib + sqlite3",
+      "health.db at workspace/health/health.db — imported via sys.path.insert",
+      "Perplexity already configured in openclaw.json, now enabled: true",
+      "BlueBubbles is sole active channel — Telegram disabled (config preserved)"
+    ],
+    "decisions": [
+      "Option A (source-by-source delivery): Session A=Withings, Session B=Apple Health XML all categories, Session C=Evernote+Oura tags",
+      "Withings developer app registered in integration phase (10-user limit) — fine for personal use",
+      "Fixed drop folder for Apple Health XML with --file override CLI arg",
+      "Evernote filter: tagged export + title regex 'Week \\d+ Training Plan'",
+      "body_metrics table schema: date, metric_type (weight/body_fat), value_lbs, source (withings/apple_health/manual), imported_at, dedup_key — safe for concurrent multi-source writes",
+      "Two separate AGENTS.md rules for health data: Rule 6b (query enforcement) and Rule 6c (entry enforcement) — different failure modes require different forbidden phrases",
+      "bp_sessions.py is single source of truth for session grouping — future pillars import from it",
+      "All planning docs now live in ~/Code Projects/{Project Name}/ — not inside ironclaw repo docs/tasks/"
+    ],
+    "blockers": [],
+    "open_questions": [],
+    "risks": [
+      "Withings tokens must be refreshed before expiry — withings-sync.py handles this but first daily cron run must succeed",
+      "Apple Health XML can be 200MB-2GB — streaming iterparse mandatory",
+      "AGENTS.md growing large (~48K chars system prompt, ~17% truncated) — Rule 6b entries must stay concise as more pillars added"
+    ]
+  },
+  "working_set": {
+    "key_files": [
+      "agents/sample-agent/workspace/health/health_db.py",
+      "scripts/withings-sync.py",
+      "scripts/withings-auth.py",
+      "docs/tasks/main/specs/plan.md",
+      "docs/tasks/main/specs/tasks.md",
+      "agents/sample-agent/workspace/health/health_query.py",
+      "agents/sample-agent/workspace/AGENTS.md",
+      "agents/sample-agent/workspace/skills/health-query/SKILL.md"
+    ],
+    "active_ids": [],
+    "recent_commands": [
+      "python3 scripts/withings-auth.py",
+      "python3 scripts/withings-sync.py --historical"
+    ]
+  },
+  "context": {
+    "wip_state": "uncommitted",
+    "last_commit": "5db2752",
+    "session_arc": "9-session sprint on health-db multi-pillar system (Apr 26–29). S1 scoped health-db. S2 implemented phases 1-3 (SQLite, blood labs, Oura). S3 wrote 4 test files. S4 clean/test/evaluate, fixed 3 architecture issues, pushed, disabled Telegram. S5 scoped health_query.py (3 subcommands, 6 intents), shipped raw_transcript storage. S6 executed health_query.py: built all 3 subcommands, cost_summary.py, health-query SKILL.md, enabled Perplexity, 88 tests passing, pushed 5 commits. S7 debugged live routing: fixed AGENTS.md Rule 6b enforcement, per-intent guardrails in SKILL.md, skill config sync issue, and intent triggers. S8 built BP pillar end-to-end (import, query, entry, tests, SKILL.md Intents 7+8, AGENTS.md Rules 6b+6c), fixed 3 arch review issues, 72 tests passing, 14 commits pushed. Agent live and responding correctly. S9 scoped multi-source data import (Withings, Apple Health XML, Evernote ENEX, Oura tags) and completed Withings integration: OAuth2 token setup, daily cron with historical import (154 rows). Next: Apple Health XML import (Session B), Evernote+Oura tags (Session C)."
+  }
+}

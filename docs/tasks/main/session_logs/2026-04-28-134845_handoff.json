@@ -1,0 +1,102 @@
+{
+  "version": "1.1",
+  "timestamp": "2026-04-28-134845",
+  "branch_name": "main",
+  "task_name": "Health Database Multi-Pillar System",
+  "session_number": 8,
+  "continuity": {
+    "started": "2026-04-26",
+    "sessions_reviewed": 3,
+    "arc_goal": "Build unified Health SQLite database (health.db) with cross-pillar queries and complete read layer (health_query.py, cost_summary.py, health-query SKILL.md) so agent can answer 'how has my ApoB changed and what does Attia say about it' meaningfully via iMessage/BlueBubbles, with weekly email summaries, spend tracking, and personal health data entry across pillars (blood pressure, weight, labs, Oura metrics, podcast knowledge)."
+  },
+  "progress_update": {
+    "summary": "We built the blood pressure pillar end-to-end: health.db schema, Omron CSV importer (28 historical readings), HTML doctor report (ready to print for Monday appointment), health_query.py blood-pressure and bp-log subcommands, SKILL.md Intents 7+8, AGENTS.md Rules 6b+6c, 72 tests passing. Then debugged the iMessage entry flow — agent was giving clinical advice and asking permission instead of just asking 'now or past?'. Fixed with Rule 6c in AGENTS.md. Also fixed 3 arch review findings: busy_timeout for SQLite concurrency, extracted session-grouping algorithm to shared bp_sessions.py, updated procedures-health-pillar-onboarding skill with the Rule 6c pattern. 14 commits pushed to origin/main.",
+    "goal": "Personal health intelligence via iMessage: query lab results, Oura metrics, blood pressure, and podcast knowledge; log new BP readings; receive weekly email summaries.",
+    "accomplished": [
+      "Built complete BP pillar: health_db.py schema, import-blood-pressure.py (Omron CSV), bp-report.py (HTML doctor report), health_query.py blood-pressure + bp-log subcommands, bp_sessions.py shared session-grouping module",
+      "SKILL.md Intent 7 (entry: now-or-past → bp-log exec) + Intent 8 (query → blood-pressure exec) + AGENTS.md Rule 6b extension + Rule 6c (forbids asking permission and clinical advice)",
+      "72 tests passing: test_blood_pressure.py (19 unit), test_import_blood_pressure.py (4 integration), plus existing 49",
+      "HTML doctor report generated at bp_report_2026-01-01_2026-04-28.html — ready to print PDF for Monday appointment",
+      "Architecture fixes: busy_timeout=5000 in health_db.py (SQLite lock safety), session grouping extracted to bp_sessions.py (no more duplication)",
+      "Updated procedures-health-pillar-onboarding skill v2 with Rule 6c pattern — documents two-rule enforcement model (6b for queries, 6c for entry)"
+    ],
+    "now": "Session complete. BP pillar fully built, tested, and deployed. Agent live and responding correctly to BP entry and query via iMessage.",
+    "next_steps": [
+      "Apple Health BP sync — one-time historical import from iPhone XML export + iOS Shortcut → iCloud Drive ongoing sync. Deduplicates safely against Omron data. Half-session.",
+      "Bulk podcast ingestion — Whisper-summarize all Attia/Huberman/Rhonda at 5–10/night. Biggest lever for health knowledge search quality. Needs scope session.",
+      "Weight pillar — iMessage entry ('185.2') → body_metrics table. Same pattern as BP (Rule 6c). Half-session.",
+      "Weekly summary email — Oura + BP + cost narrative, Sunday 6pm cron. Doctor email cadence TBD (ask at Monday appointment).",
+      "DB backup strategy — imessage-source BP rows have no other copy; daily sqlite3 backup cron urgent per arch review.",
+      "DB migration runner — PRAGMA user_version framework before next schema change."
+    ],
+    "confidence": "high",
+    "constraints": [
+      "iMessage entry enforcement requires BOTH Rule 6b (query) AND Rule 6c (entry) in AGENTS.md — SKILL.md alone insufficient for either",
+      "Rule 6c must forbid: asking permission to log, clinical advice, seek-care language, 'say log to save'",
+      "bp_sessions.py is the single source of truth for 30-min session grouping — import from it for any future pillar that needs session grouping",
+      "busy_timeout=5000 already set — safe for concurrent host writes + container reads",
+      "compose-up.sh cooldown may skip restart after config changes — use docker restart sample-agent_secure if needed",
+      "HTML doctor report at /Users/jeff/ironclaw/bp_report_2026-01-01_2026-04-28.html — open in browser, Cmd+P → Save as PDF",
+      "AGENTS.md Rule 6b must be updated whenever a new health data type is added — model will not exec without explicit forbidden phrases",
+      "health_query.py runs inside agent container — paths must be container-relative (/home/openclaw/.openclaw/workspace/health/)",
+      "Python 3 only, no jq, no new pip deps beyond stdlib + sqlite3",
+      "health.db at workspace/health/health.db — imported via sys.path.insert",
+      "Perplexity already configured in openclaw.json, now enabled: true",
+      "Weekly summary email via send-email.sh (SMTP_FROM_EMAIL + GMAIL_APP_PASSWORD in .env)",
+      "BlueBubbles is sole active channel — Telegram disabled (config preserved)",
+      "All planning docs in ~/Code Projects/Health DB/ — NOT in ironclaw repo docs/tasks/"
+    ],
+    "decisions": [
+      "Two separate AGENTS.md rules for BP: Rule 6b (query enforcement) and Rule 6c (entry enforcement) — different failure modes require different forbidden phrases",
+      "Extracted session-grouping to bp_sessions.py — single source of truth, future pillars import from it",
+      "Apple Health deferred to next session — Omron CSV covers history, iMessage covers ongoing",
+      "Podcast knowledge search ('what do my summaries say about X') routes to health-query FTS5, not podcast-summary Whisper — different pipelines for searching existing vs transcribing new",
+      "Rule 6b pattern confirmed: forbidden response phrases + exact exec commands in AGENTS.md is the reliable enforcement layer for GPT-5-mini personal data queries",
+      "Routing logic in SKILL.md not health_query.py — agent has conversational context for follow-up contrast flow",
+      "Email body via temp file write (/tmp/health_weekly.txt), not stdin piping — exec tool may not support stdin",
+      "FTS5 user input phrase-quoted (_fts_quote) to prevent operator injection; LIKE wildcards escaped with ESCAPE clause",
+      "Weekly summary cron task wording matches Intent 5 triggers exactly so cron re-entry routes correctly",
+      "health_store.py public API (append_entry, load_all, find_by_show) must be preserved — engine.py and on_demand.py cannot change",
+      "launchd oura sync uses StartCalendarInterval (batch/weekly) not KeepAlive (daemon) — different from whisper-server pattern",
+      "Blood lab import runs --dry-run first to handle unknown Excel layout quirks before committing",
+      "Jeff has Gen3 Oura ring — pull all endpoints including stress, resilience, VO2 max; handle 404s gracefully",
+      "Oura heartrate 'missing' data is an API limitation — not fixable, accepted as-is",
+      "daily_spo2 is the correct Oura v2 endpoint (not spo2); daily_hrv endpoint doesn't exist (HRV via sleep sessions avg_hrv)",
+      "All planning docs now live in ~/Code Projects/{Project Name}/ — not inside the ironclaw repo"
+    ],
+    "blockers": [],
+    "open_questions": [
+      "Ask doctor Monday: is periodic BP summary email to her portal useful or noise?",
+      "Rule 6c state machine: if user never replies 'now or past?', reading is silently lost — low priority fix but worth noting"
+    ],
+    "risks": [
+      "No DB backup yet — imessage-source rows have no other copy (arch review flagged urgent)",
+      "AGENTS.md growing large (~48K chars system prompt, ~17% truncated) — Rule 6b/6c entries must stay concise as more pillars added"
+    ]
+  },
+  "working_set": {
+    "key_files": [
+      "agents/sample-agent/workspace/health/health_db.py",
+      "agents/sample-agent/workspace/health/health_query.py",
+      "agents/sample-agent/workspace/health/bp_sessions.py",
+      "agents/sample-agent/workspace/health/test_blood_pressure.py",
+      "agents/sample-agent/workspace/skills/health-query/SKILL.md",
+      "agents/sample-agent/workspace/AGENTS.md",
+      "scripts/import-blood-pressure.py",
+      "scripts/bp-report.py",
+      "scripts/test_import_blood_pressure.py"
+    ],
+    "active_ids": [],
+    "recent_commands": [
+      "python3.13 -m unittest test_health_query test_cost_summary test_blood_pressure",
+      "python3.13 scripts/bp-report.py --start 2026-01-01 --end 2026-04-28",
+      "docker restart sample-agent_secure",
+      "git push origin main"
+    ]
+  },
+  "context": {
+    "wip_state": "committed",
+    "last_commit": "5db2752",
+    "session_arc": "8-session sprint on health-db multi-pillar system (Apr 26–28). S1 scoped health-db. S2 implemented phases 1-3 (SQLite, blood labs, Oura). S3 wrote 4 test files. S4 clean/test/evaluate, fixed 3 architecture issues, pushed, disabled Telegram. S5 scoped health_query.py (3 subcommands, 6 intents), shipped raw_transcript storage. S6 executed health_query.py: built all 3 subcommands, cost_summary.py, health-query SKILL.md, enabled Perplexity, 88 tests passing, pushed 5 commits. S7 debugged live routing: fixed AGENTS.md Rule 6b enforcement, per-intent guardrails in SKILL.md, skill config sync issue, and intent triggers. S8 built BP pillar end-to-end (import, query, entry, tests, SKILL.md Intents 7+8, AGENTS.md Rules 6b+6c), fixed 3 arch review issues, 72 tests passing, 14 commits pushed. Agent live and responding correctly. Next: Apple Health sync, bulk podcast ingestion, weight pillar, weekly email, DB backup."
+  }
+}
