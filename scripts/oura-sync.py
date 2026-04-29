@@ -294,6 +294,32 @@ def sync_heartrate(conn, headers: dict, start: str, end: str) -> None:
     set_last_synced(conn, "heartrate", end)
 
 
+def sync_tags(conn, headers: dict, start: str, end: str) -> None:
+    """Sync Oura enhanced tags into oura_tags table."""
+    log.info("Syncing Oura tags %s → %s", start, end)
+    count = 0
+
+    for chunk_start, chunk_end in date_chunks(start, end, days=90):
+        for rec in fetch_all("enhanced_tag", chunk_start, chunk_end, headers):
+            try:
+                conn.execute(
+                    """INSERT OR REPLACE INTO oura_tags
+                         (id, day, tag_type, start_time, end_time, comment)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (rec.get("id"), rec.get("day"),
+                     rec.get("tag_type_code", rec.get("tag_type")),
+                     rec.get("start_time"), rec.get("end_time"),
+                     rec.get("comment")),
+                )
+                count += 1
+            except Exception as e:
+                log.warning("Skipping tag row: %s", e)
+
+    conn.commit()
+    log.info("Upserted %d tag rows", count)
+    set_last_synced(conn, "tags", end)
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -329,6 +355,7 @@ def main() -> None:
         (sync_daily_summaries, "daily_summaries"),
         (sync_sleep_sessions, "sleep"),
         (sync_heartrate, "heartrate"),
+        (sync_tags, "tags"),
     ]:
         resource_start = start or get_last_synced(conn, resource_key, DEFAULT_START)
         if resource_start >= today:
