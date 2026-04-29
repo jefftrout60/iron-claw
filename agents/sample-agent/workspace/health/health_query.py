@@ -3,13 +3,15 @@
 health_query.py — Read-only query interface for health.db.
 
 Subcommands (all output JSON to stdout):
-  lab-trend       --marker NAME [--months N]
-  oura-window     [--metric NAME | --all] [--days N]
-  search          --query TEXT [--limit N]
-  blood-pressure  [--days N] [--start YYYY-MM-DD] [--end YYYY-MM-DD]
-  body-metrics    [--days N] [--start YYYY-MM-DD] [--end YYYY-MM-DD]
-  activity        [--days N] [--start YYYY-MM-DD] [--end YYYY-MM-DD]
-  workouts        [--days N] [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--type TYPE]
+  lab-trend          --marker NAME [--months N]
+  oura-window        [--metric NAME | --all] [--days N]
+  search             --query TEXT [--limit N]
+  blood-pressure     [--days N] [--start YYYY-MM-DD] [--end YYYY-MM-DD]
+  body-metrics       [--days N] [--start YYYY-MM-DD] [--end YYYY-MM-DD]
+  activity           [--days N] [--start YYYY-MM-DD] [--end YYYY-MM-DD]
+  workouts           [--days N] [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--type TYPE]
+  workout-exercises  [--date YYYY-MM-DD | --days N]
+  tags               [--days N] [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--type TAG]
 
 Exit 0 on success, exit 1 with {"error": "..."} JSON on failure.
 """
@@ -425,6 +427,135 @@ def workouts_query(days: int, start: str | None, end: str | None,
 
 
 # ---------------------------------------------------------------------------
+# workout-exercises
+# ---------------------------------------------------------------------------
+
+def workout_exercises_query(days: int, single_date: str | None) -> dict:
+    conn = health_db.get_connection()
+
+    if single_date:
+        start_date = single_date
+        end_date = single_date
+        period = single_date
+    else:
+        end_date = date.today().isoformat()
+        start_date = (date.today() - timedelta(days=days)).isoformat()
+        period = f"{start_date} to {end_date}"
+
+    # Left join so workout rows without exercises still appear (evernote-only days)
+    rows = conn.execute(
+        """
+        SELECT
+            we.workout_date,
+            w.workout_type,
+            w.duration_min,
+            we.exercise_name,
+            we.set_number,
+            we.reps,
+            we.weight_lbs,
+            we.notes AS exercise_notes
+        FROM workout_exercises we
+        LEFT JOIN workouts w ON w.date = we.workout_date
+        WHERE we.workout_date >= ? AND we.workout_date <= ?
+        ORDER BY we.workout_date ASC, w.workout_type ASC, we.set_number ASC
+        """,
+        (start_date, end_date),
+    ).fetchall()
+
+    if not rows:
+        range_desc = single_date if single_date else f"last {days} days"
+        _err(f"no workout exercises in {range_desc}")
+
+    # Group exercises under their workout session (date + workout_type)
+    workouts_map: dict = {}
+    for r in rows:
+        key = (r["workout_date"], r["workout_type"])
+        if key not in workouts_map:
+            workouts_map[key] = {
+                "date": r["workout_date"],
+                "workout_type": r["workout_type"],
+                "duration_min": r["duration_min"],
+                "exercises": [],
+            }
+        exercise: dict = {}
+        if r["exercise_name"] is not None:
+            exercise["exercise_name"] = r["exercise_name"]
+        if r["set_number"] is not None:
+            exercise["set_number"] = r["set_number"]
+        if r["reps"] is not None:
+            exercise["reps"] = r["reps"]
+        if r["weight_lbs"] is not None:
+            exercise["weight_lbs"] = r["weight_lbs"]
+        if r["exercise_notes"] is not None:
+            exercise["notes"] = r["exercise_notes"]
+        workouts_map[key]["exercises"].append(exercise)
+
+    # Remove null duration_min from workout entries
+    workout_list = []
+    for entry in workouts_map.values():
+        if entry["duration_min"] is None:
+            del entry["duration_min"]
+        workout_list.append(entry)
+
+    return {
+        "period": period,
+        "total_exercises": len(rows),
+        "workouts": workout_list,
+    }
+
+
+# ---------------------------------------------------------------------------
+# tags
+# ---------------------------------------------------------------------------
+
+def tags_query(days: int, start: str | None, end: str | None,
+               tag_type: str | None) -> dict:
+    conn = health_db.get_connection()
+
+    end_date = end if end else date.today().isoformat()
+    start_date = start if start else (date.today() - timedelta(days=days)).isoformat()
+
+    if tag_type:
+        escaped_type = (
+            tag_type.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        )
+        rows = conn.execute(
+            "SELECT day, tag_type, comment FROM oura_tags"
+            " WHERE day >= ? AND day <= ? AND tag_type LIKE ? ESCAPE '\\'"
+            " ORDER BY day ASC, tag_type ASC",
+            (start_date, end_date, f"%{escaped_type}%"),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT day, tag_type, comment FROM oura_tags"
+            " WHERE day >= ? AND day <= ?"
+            " ORDER BY day ASC, tag_type ASC",
+            (start_date, end_date),
+        ).fetchall()
+
+    if not rows:
+        range_desc = f"{start_date} to {end_date}" if start else f"last {days} days"
+        filter_desc = f" (type filter: {tag_type})" if tag_type else ""
+        _err(f"no tags in {range_desc}{filter_desc}")
+
+    data = [
+        {"day": r["day"], "tag_type": r["tag_type"], "comment": r["comment"]}
+        for r in rows
+    ]
+
+    by_type: dict = {}
+    for r in rows:
+        by_type[r["tag_type"]] = by_type.get(r["tag_type"], 0) + 1
+
+    return {
+        "days_requested": days,
+        "total_tags": len(rows),
+        "data": data,
+        "by_type": by_type,
+    }
+
+
+# ---------------------------------------------------------------------------
 # search
 # ---------------------------------------------------------------------------
 
@@ -520,6 +651,20 @@ def main() -> None:
     wo.add_argument("--type", dest="workout_type",
                     help="Case-insensitive substring filter on workout_type")
 
+    we = sub.add_parser("workout-exercises",
+                        help="Exercises grouped by workout session")
+    we.add_argument("--date", dest="single_date",
+                    help="Single day YYYY-MM-DD (overrides --days)")
+    we.add_argument("--days", type=int, default=7,
+                    help="Lookback window in days (default: 7)")
+
+    tg = sub.add_parser("tags", help="Oura lifestyle tags (sauna, alcohol, etc.)")
+    tg.add_argument("--days", type=int, default=30)
+    tg.add_argument("--start", help="Start date YYYY-MM-DD (overrides --days)")
+    tg.add_argument("--end", help="End date YYYY-MM-DD (default: today)")
+    tg.add_argument("--type", dest="tag_type",
+                    help="Case-insensitive substring filter on tag_type")
+
     args = parser.parse_args()
 
     if args.command == "lab-trend":
@@ -539,6 +684,10 @@ def main() -> None:
         result = activity_query(args.days, args.start, args.end)
     elif args.command == "workouts":
         result = workouts_query(args.days, args.start, args.end, args.workout_type)
+    elif args.command == "workout-exercises":
+        result = workout_exercises_query(args.days, args.single_date)
+    elif args.command == "tags":
+        result = tags_query(args.days, args.start, args.end, args.tag_type)
     _out(result)
 
 

@@ -506,6 +506,182 @@ class TestWorkoutsQuery(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# workout_exercises_query tests
+# ---------------------------------------------------------------------------
+
+class TestWorkoutExercisesQuery(unittest.TestCase):
+    """Tests for health_query.workout_exercises_query()."""
+
+    def setUp(self):
+        self.conn = _make_conn()
+        self._original_get_connection = health_db.get_connection
+        health_query.health_db.get_connection = lambda *a, **kw: self.conn
+
+    def tearDown(self):
+        health_db.get_connection = self._original_get_connection
+        self.conn.close()
+
+    def _insert_workout(self, date_str, workout_type, duration_min=None):
+        self.conn.execute(
+            """INSERT INTO workouts (date, workout_type, duration_min, source)
+               VALUES (?, ?, ?, 'apple_health')""",
+            (date_str, workout_type, duration_min),
+        )
+        self.conn.commit()
+        return self.conn.execute(
+            "SELECT id FROM workouts WHERE date = ? AND workout_type = ?",
+            (date_str, workout_type),
+        ).fetchone()["id"]
+
+    def _insert_exercise(self, workout_id, workout_date, exercise_name,
+                         set_number=None, reps=None, weight_lbs=None, notes=None):
+        self.conn.execute(
+            """INSERT INTO workout_exercises
+                   (workout_id, workout_date, exercise_name, set_number, reps, weight_lbs, notes)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (workout_id, workout_date, exercise_name, set_number, reps, weight_lbs, notes),
+        )
+        self.conn.commit()
+
+    def test_returns_correct_top_level_keys(self):
+        wid = self._insert_workout("2099-01-15", "Strength", 45.0)
+        self._insert_exercise(wid, "2099-01-15", "Squat", set_number=1, reps=5, weight_lbs=185.0)
+        result = health_query.workout_exercises_query(7, "2099-01-15")
+        for key in ("period", "total_exercises", "workouts"):
+            self.assertIn(key, result, f"Missing top-level key: {key}")
+
+    def test_single_date_sets_period(self):
+        wid = self._insert_workout("2099-02-10", "Strength", 60.0)
+        self._insert_exercise(wid, "2099-02-10", "Deadlift", set_number=1, reps=3, weight_lbs=225.0)
+        result = health_query.workout_exercises_query(7, "2099-02-10")
+        self.assertEqual(result["period"], "2099-02-10")
+
+    def test_exercises_grouped_under_workout(self):
+        wid = self._insert_workout("2099-03-01", "FunctionalStrengthTraining", 62.0)
+        self._insert_exercise(wid, "2099-03-01", "Squat", set_number=1, reps=5, weight_lbs=185.0)
+        self._insert_exercise(wid, "2099-03-01", "Squat", set_number=2, reps=5, weight_lbs=185.0)
+        result = health_query.workout_exercises_query(7, "2099-03-01")
+        self.assertEqual(len(result["workouts"]), 1)
+        self.assertEqual(len(result["workouts"][0]["exercises"]), 2)
+        self.assertEqual(result["total_exercises"], 2)
+
+    def test_null_values_omitted_from_exercise_dict(self):
+        wid = self._insert_workout("2099-04-01", "Cardio", 30.0)
+        # Insert exercise with no weight or notes
+        self._insert_exercise(wid, "2099-04-01", "Run", set_number=1, reps=None, weight_lbs=None)
+        result = health_query.workout_exercises_query(7, "2099-04-01")
+        exercise = result["workouts"][0]["exercises"][0]
+        self.assertNotIn("reps", exercise)
+        self.assertNotIn("weight_lbs", exercise)
+        self.assertNotIn("notes", exercise)
+
+    def test_null_duration_omitted_from_workout(self):
+        wid = self._insert_workout("2099-05-01", "Yoga", None)
+        self._insert_exercise(wid, "2099-05-01", "Warrior Pose", set_number=1)
+        result = health_query.workout_exercises_query(7, "2099-05-01")
+        self.assertNotIn("duration_min", result["workouts"][0])
+
+    def test_days_window_filters_correctly(self):
+        wid1 = self._insert_workout("2099-01-01", "Strength", 40.0)
+        self._insert_exercise(wid1, "2099-01-01", "OldExercise", set_number=1)
+        wid2 = self._insert_workout("2099-03-20", "Strength", 50.0)
+        self._insert_exercise(wid2, "2099-03-20", "Squat", set_number=1)
+        # Single-date mode returns only the matching workout
+        result = health_query.workout_exercises_query(7, "2099-03-20")
+        self.assertEqual(len(result["workouts"]), 1)
+        self.assertEqual(result["workouts"][0]["date"], "2099-03-20")
+
+    def test_no_data_raises_system_exit(self):
+        with self.assertRaises(SystemExit):
+            health_query.workout_exercises_query(7, None)
+
+    def test_no_data_for_date_raises_system_exit(self):
+        with self.assertRaises(SystemExit):
+            health_query.workout_exercises_query(7, "2099-12-31")
+
+
+# ---------------------------------------------------------------------------
+# tags_query tests
+# ---------------------------------------------------------------------------
+
+class TestTagsQuery(unittest.TestCase):
+    """Tests for health_query.tags_query()."""
+
+    def setUp(self):
+        self.conn = _make_conn()
+        self._original_get_connection = health_db.get_connection
+        health_query.health_db.get_connection = lambda *a, **kw: self.conn
+
+    def tearDown(self):
+        health_db.get_connection = self._original_get_connection
+        self.conn.close()
+
+    def _insert_tag(self, tag_id, day, tag_type, comment=None):
+        self.conn.execute(
+            "INSERT INTO oura_tags (id, day, tag_type, comment) VALUES (?, ?, ?, ?)",
+            (tag_id, day, tag_type, comment),
+        )
+        self.conn.commit()
+
+    def test_returns_correct_top_level_keys(self):
+        self._insert_tag("t1", "2099-01-15", "sauna")
+        result = health_query.tags_query(30, "2099-01-01", "2099-12-31", None)
+        for key in ("days_requested", "total_tags", "data", "by_type"):
+            self.assertIn(key, result, f"Missing top-level key: {key}")
+
+    def test_data_row_has_required_fields(self):
+        self._insert_tag("t1", "2099-01-15", "sauna", "30 min session")
+        result = health_query.tags_query(30, "2099-01-01", "2099-12-31", None)
+        row = result["data"][0]
+        for field in ("day", "tag_type", "comment"):
+            self.assertIn(field, row, f"Missing field: {field}")
+
+    def test_by_type_groups_correctly(self):
+        self._insert_tag("t1", "2099-01-15", "sauna")
+        self._insert_tag("t2", "2099-01-16", "sauna")
+        self._insert_tag("t3", "2099-01-17", "alcohol")
+        result = health_query.tags_query(30, "2099-01-01", "2099-12-31", None)
+        self.assertEqual(result["by_type"]["sauna"], 2)
+        self.assertEqual(result["by_type"]["alcohol"], 1)
+
+    def test_total_tags_count(self):
+        self._insert_tag("t1", "2099-02-01", "sauna")
+        self._insert_tag("t2", "2099-02-02", "late_meal")
+        result = health_query.tags_query(30, "2099-01-01", "2099-12-31", None)
+        self.assertEqual(result["total_tags"], 2)
+        self.assertEqual(len(result["data"]), 2)
+
+    def test_type_filter_substring_match(self):
+        self._insert_tag("t1", "2099-03-01", "sauna")
+        self._insert_tag("t2", "2099-03-02", "alcohol")
+        self._insert_tag("t3", "2099-03-03", "late_meal")
+        result = health_query.tags_query(30, "2099-01-01", "2099-12-31", "sau")
+        self.assertEqual(result["total_tags"], 1)
+        self.assertEqual(result["data"][0]["tag_type"], "sauna")
+
+    def test_null_comment_included_in_row(self):
+        self._insert_tag("t1", "2099-04-01", "sauna", None)
+        result = health_query.tags_query(30, "2099-01-01", "2099-12-31", None)
+        self.assertIsNone(result["data"][0]["comment"])
+
+    def test_start_end_overrides_days(self):
+        self._insert_tag("t1", "2099-01-01", "sauna")
+        self._insert_tag("t2", "2099-03-01", "sauna")
+        result = health_query.tags_query(30, "2099-01-01", "2099-01-31", None)
+        self.assertEqual(result["total_tags"], 1)
+        self.assertEqual(result["data"][0]["day"], "2099-01-01")
+
+    def test_no_data_raises_system_exit(self):
+        with self.assertRaises(SystemExit):
+            health_query.tags_query(30, None, None, None)
+
+    def test_type_filter_no_match_raises_system_exit(self):
+        self._insert_tag("t1", "2099-05-01", "sauna")
+        with self.assertRaises(SystemExit):
+            health_query.tags_query(30, "2099-01-01", "2099-12-31", "alcohol")
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
