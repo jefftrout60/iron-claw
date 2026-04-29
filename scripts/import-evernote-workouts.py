@@ -9,7 +9,10 @@ Two-pass parse:
   Pass 1 — outer ENEX XML: extract note title, created date, ENML content.
   Pass 2 — inner ENML: HTMLParser finds tables, extracts Actual exercise rows.
 
-Exercise parsing and DB import are handled in tasks 3.4 and 3.5.
+Exercise parsing (parse_exercise_text) converts each line in the "Actual"
+column to a structured dict. Week-date derivation maps note titles to
+calendar dates, then links each day row to a workouts record (creating a
+minimal stub row if no Apple Watch workout exists for that date).
 
 Usage:
   python3 scripts/import-evernote-workouts.py --file workouts.enex --dry-run
