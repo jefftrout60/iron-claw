@@ -51,7 +51,7 @@ def get_connection(db_path: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def initialize_schema(conn: sqlite3.Connection) -> None:
@@ -63,6 +63,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
       0 → 1 : original tables (health_knowledge, lab_*, oura_*, blood_pressure)
       1 → 2 : body_metrics
       2 → 3 : activity_daily, workouts
+      3 → 4 : workout_exercises, oura_tags
     """
     _version = conn.execute("PRAGMA user_version").fetchone()[0]
     # ---------- health_knowledge ----------------------------------------
@@ -343,5 +344,38 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             CREATE INDEX IF NOT EXISTS idx_workouts_date
             ON workouts(date);
         """)
-        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        conn.execute("PRAGMA user_version = 3")
         conn.commit()
+        _version = 3
+
+    # ---------- v4: workout_exercises + oura_tags -----------------------
+    if _version < 4:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS workout_exercises (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                workout_id      INTEGER REFERENCES workouts(id) ON DELETE CASCADE,
+                workout_date    TEXT NOT NULL,
+                exercise_name   TEXT NOT NULL,
+                set_number      INTEGER,
+                reps            INTEGER,
+                weight_lbs      REAL,
+                notes           TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_workout_exercises_date
+            ON workout_exercises(workout_date);
+
+            CREATE TABLE IF NOT EXISTS oura_tags (
+                id          TEXT PRIMARY KEY,
+                day         TEXT NOT NULL,
+                tag_type    TEXT NOT NULL,
+                start_time  TEXT,
+                end_time    TEXT,
+                comment     TEXT,
+                fetched_at  TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_oura_tags_day
+            ON oura_tags(day);
+        """)
+        conn.execute("PRAGMA user_version = 4")
+        conn.commit()
+        _version = 4
