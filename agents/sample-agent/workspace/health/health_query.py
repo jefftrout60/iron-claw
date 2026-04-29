@@ -7,6 +7,7 @@ Subcommands (all output JSON to stdout):
   oura-window     [--metric NAME | --all] [--days N]
   search          --query TEXT [--limit N]
   blood-pressure  [--days N] [--start YYYY-MM-DD] [--end YYYY-MM-DD]
+  body-metrics    [--days N] [--start YYYY-MM-DD] [--end YYYY-MM-DD]
 
 Exit 0 on success, exit 1 with {"error": "..."} JSON on failure.
 """
@@ -236,6 +237,69 @@ def bp_log(systolic: int, diastolic: int, pulse: int | None,
 
 
 # ---------------------------------------------------------------------------
+# body-metrics
+# ---------------------------------------------------------------------------
+
+def body_metrics_query(days: int, start: str | None, end: str | None) -> dict:
+    conn = health_db.get_connection()
+
+    end_date = end if end else date.today().isoformat()
+    start_date = start if start else (date.today() - timedelta(days=days)).isoformat()
+
+    rows = conn.execute(
+        """SELECT date, time, weight_lbs, fat_ratio_pct, fat_mass_lbs,
+                  lean_mass_lbs, muscle_mass_lbs, source
+           FROM body_metrics
+           WHERE date >= ? AND date <= ?
+           ORDER BY date ASC, time ASC""",
+        (start_date, end_date),
+    ).fetchall()
+
+    if not rows:
+        range_desc = f"{start_date} to {end_date}" if start else f"last {days} days"
+        _err(f"no body metrics data in {range_desc}")
+
+    data = [
+        {
+            "date": r["date"],
+            "time": r["time"],
+            "weight_lbs": r["weight_lbs"],
+            "fat_ratio_pct": r["fat_ratio_pct"],
+            "fat_mass_lbs": r["fat_mass_lbs"],
+            "lean_mass_lbs": r["lean_mass_lbs"],
+            "muscle_mass_lbs": r["muscle_mass_lbs"],
+            "source": r["source"],
+        }
+        for r in rows
+    ]
+
+    weights = [r["weight_lbs"] for r in rows if r["weight_lbs"] is not None]
+    fat_ratios = [r["fat_ratio_pct"] for r in rows if r["fat_ratio_pct"] is not None]
+
+    latest_row = rows[-1]
+    latest = {
+        "date": latest_row["date"],
+        "weight_lbs": latest_row["weight_lbs"],
+        "fat_ratio_pct": latest_row["fat_ratio_pct"],
+    }
+
+    summary: dict = {"latest": latest}
+    if weights:
+        summary["avg_weight_lbs"] = round(sum(weights) / len(weights), 2)
+        summary["min_weight_lbs"] = min(weights)
+        summary["max_weight_lbs"] = max(weights)
+    if fat_ratios:
+        summary["avg_fat_ratio_pct"] = round(sum(fat_ratios) / len(fat_ratios), 2)
+
+    return {
+        "days_requested": days,
+        "readings": len(rows),
+        "data": data,
+        "summary": summary,
+    }
+
+
+# ---------------------------------------------------------------------------
 # search
 # ---------------------------------------------------------------------------
 
@@ -314,6 +378,11 @@ def main() -> None:
     lg.add_argument("--time", dest="reading_time", required=True, help="HH:MM")
     lg.add_argument("--notes", default=None)
 
+    bm = sub.add_parser("body-metrics", help="Body composition trend (weight, fat, lean mass)")
+    bm.add_argument("--days", type=int, default=90)
+    bm.add_argument("--start", help="Start date YYYY-MM-DD (overrides --days)")
+    bm.add_argument("--end", help="End date YYYY-MM-DD (default: today)")
+
     args = parser.parse_args()
 
     if args.command == "lab-trend":
@@ -327,6 +396,8 @@ def main() -> None:
     elif args.command == "bp-log":
         result = bp_log(args.systolic, args.diastolic, args.pulse,
                         args.reading_date, args.reading_time, args.notes)
+    elif args.command == "body-metrics":
+        result = body_metrics_query(args.days, args.start, args.end)
     _out(result)
 
 

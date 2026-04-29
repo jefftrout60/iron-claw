@@ -93,6 +93,11 @@ For blood pressure ("my blood pressure", "my BP readings", "systolic", "diastoli
 exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py blood-pressure --days 30
 ```
 
+For body composition ("my weight", "body fat", "lean mass", "fat percentage", "weight trend", "how much do I weigh"):
+```
+exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py body-metrics --days 90
+```
+
 If exec returns `{"error": "marker not found: X"}`, tell the user you couldn't find that marker name and suggest checking the spelling. Do NOT say you don't have access.
 
 ### Rule 6c: Blood pressure readings — ask timing first, log immediately, no medical advice
