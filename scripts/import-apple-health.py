@@ -177,11 +177,12 @@ def _parse_workout(elem):
         except ValueError:
             pass
 
-    # Extract heart rate from WorkoutStatistics children
+    # Extract heart rate and calories from WorkoutStatistics children
     avg_hr = None
     max_hr = None
     for stat in elem.findall("WorkoutStatistics"):
-        if stat.get("type") == "HKQuantityTypeIdentifierHeartRate":
+        stype = stat.get("type", "")
+        if stype == "HKQuantityTypeIdentifierHeartRate":
             avg_str = stat.get("average", "")
             max_str = stat.get("maximum", "")
             if avg_str:
@@ -194,7 +195,13 @@ def _parse_workout(elem):
                     max_hr = int(float(max_str))
                 except ValueError:
                     pass
-            break
+        elif stype == "HKQuantityTypeIdentifierActiveEnergyBurned" and calories is None:
+            sum_str = stat.get("sum", "")
+            if sum_str:
+                try:
+                    calories = round(float(sum_str))
+                except ValueError:
+                    pass
 
     return {
         "workout_type": workout_type,
