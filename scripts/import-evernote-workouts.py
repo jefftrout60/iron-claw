@@ -1,0 +1,168 @@
+#!/usr/bin/env python3
+"""
+Evernote ENEX importer for workout training plans.
+
+Parses an ENEX export file (File → Export Notes → ENEX format in Evernote)
+and extracts exercise detail from notes titled "Week \d+ Training Plan".
+
+Two-pass parse:
+  Pass 1 — outer ENEX XML: extract note title, created date, ENML content.
+  Pass 2 — inner ENML: HTMLParser finds tables, extracts Actual exercise rows.
+
+Exercise parsing and DB import are handled in tasks 3.4 and 3.5.
+
+Usage:
+  python3 scripts/import-evernote-workouts.py --file workouts.enex --dry-run
+  python3 scripts/import-evernote-workouts.py --file workouts.enex
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+from datetime import date, datetime
+from html.parser import HTMLParser
+from pathlib import Path
+import xml.etree.ElementTree as ET
+
+# health_db lives in workspace/health/
+_REPO_ROOT = Path(__file__).parent.parent
+_HEALTH_DIR = _REPO_ROOT / "agents/sample-agent/workspace/health"
+sys.path.insert(0, str(_HEALTH_DIR))
+import health_db
+
+NOTE_TITLE_RE = re.compile(r"Week \d+ Training Plan", re.IGNORECASE)
+ENEX_DATE_FORMAT = "%Y%m%dT%H%M%SZ"
+
+
+# ---------------------------------------------------------------------------
+# Pass 1: outer ENEX XML
+# ---------------------------------------------------------------------------
+
+def parse_enex(filepath: str | Path):
+    """
+    Parse ENEX file and yield (title, created_date, content_html) for each
+    note whose title matches NOTE_TITLE_RE and was created on or after 2025-01-01.
+
+    DOCTYPE is stripped before parsing to avoid a network fetch of the
+    Evernote DTD (xml.etree.ElementTree does not support resolve_entities=False).
+    """
+    text = Path(filepath).read_text(encoding="utf-8")
+    # Strip DOCTYPE declaration — ET will fail trying to resolve it otherwise
+    text = re.sub(r"<!DOCTYPE[^>]*>", "", text)
+
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError as e:
+        print(f"Error: could not parse ENEX file: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    for note in root.findall("note"):
+        title = (note.findtext("title") or "").strip()
+        if not NOTE_TITLE_RE.search(title):
+            continue
+
+        created_str = (note.findtext("created") or "").strip()
+        try:
+            created = datetime.strptime(created_str, ENEX_DATE_FORMAT).date()
+        except ValueError:
+            continue
+
+        if created < date(2025, 1, 1):
+            continue
+
+        content = note.findtext("content") or ""
+        if content:
+            yield title, created, content
+
+
+# ---------------------------------------------------------------------------
+# Pass 2: inner ENML table extraction
+# ---------------------------------------------------------------------------
+
+class TableParser(HTMLParser):
+    """Extract rows from the first table in ENML content."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.in_table = False
+        self.in_cell = False
+        self.rows: list[list[str]] = []
+        self._current_row: list[str] = []
+        self._current_cell: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list) -> None:
+        if tag == "table":
+            self.in_table = True
+        elif tag == "tr" and self.in_table:
+            self._current_row = []
+        elif tag in ("td", "th") and self.in_table:
+            self.in_cell = True
+            self._current_cell = []
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in ("td", "th") and self.in_cell:
+            self._current_row.append("".join(self._current_cell).strip())
+            self.in_cell = False
+        elif tag == "tr" and self.in_table:
+            if self._current_row:
+                self.rows.append(self._current_row)
+        elif tag == "table":
+            self.in_table = False
+
+    def handle_data(self, data: str) -> None:
+        if self.in_cell:
+            self._current_cell.append(data)
+
+
+def extract_table_rows(content_html: str) -> list[list[str]]:
+    """Extract rows from ENML content. Returns list of row lists."""
+    parser = TableParser()
+    parser.feed(content_html)
+    return parser.rows
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    arg_parser = argparse.ArgumentParser(
+        description="Import Evernote workout training plans into health.db"
+    )
+    arg_parser.add_argument("--file", required=True, help="Path to .enex export file")
+    arg_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Parse and print counts without writing to DB",
+    )
+    args = arg_parser.parse_args()
+
+    enex_path = Path(args.file)
+    if not enex_path.exists():
+        print(f"Error: file not found: {enex_path}", file=sys.stderr)
+        sys.exit(1)
+
+    notes = list(parse_enex(enex_path))
+    print(f"Found {len(notes)} matching notes")
+
+    all_rows: list[tuple[str, date, list[list[str]]]] = []
+    for title, created, content in notes:
+        rows = extract_table_rows(content)
+        all_rows.append((title, created, rows))
+        if args.dry_run:
+            print(f"  {title} ({created}): {len(rows)} rows")
+
+    if args.dry_run:
+        print("Dry run — no DB writes")
+        return
+
+    # Exercise parsing and DB import handled in tasks 3.4 and 3.5
+    print(
+        f"Parsed {len(all_rows)} notes — run without --dry-run after tasks 3.4/3.5 are complete"
+    )
+
+
+if __name__ == "__main__":
+    main()
