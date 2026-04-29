@@ -32,6 +32,11 @@ Read the user's message and identify which intent applies:
 | 6 — Set up weekly cron | "set up my weekly summary", "schedule weekly health email", "automate weekly summary" | register Sunday 6 PM cron via cron tool |
 | 7 — BP entry | message matches pattern NNN/NN or NNN/NN NN (a reading, e.g. "133/68 55") | ask now-or-past, then exec bp-log |
 | 8 — BP query | "my blood pressure", "BP readings", "systolic", "diastolic", "BP trend", "blood pressure last N days" | exec blood-pressure, synthesize |
+| 9 — Body metrics | "my weight", "body fat", "lean mass", "fat percentage", "weight trend", "how much do I weigh" | exec body-metrics, synthesize |
+| 10 — Activity | "my steps", "steps this week", "how active", "time outside", "daylight" | exec activity, synthesize |
+| 11 — Workouts | "my workouts", "did I exercise", "gym this week", "workout summary", "training" | exec workouts, synthesize |
+| 12 — Workout exercises | "what did I do at the gym", "my exercises", "sets and reps", "strength training detail" | exec workout-exercises, synthesize |
+| 13 — Tags | "my sauna days", "Oura tags", "tag trends", "sauna this month" | exec tags, synthesize |
 
 ---
 
@@ -332,6 +337,166 @@ This fires the Intent 5 pipeline automatically every Sunday at 6 PM. The cron ta
 Reply via iMessage: "Done — your weekly health summary is scheduled for every Sunday at 6 PM. The first one will arrive this Sunday (or next Sunday if it's already past 6 PM today)."
 
 **Hard rule: NEVER mention cron tool names, exec calls, or script paths in user-facing replies.**
+
+---
+
+## Intent 9 — Body Metrics
+
+**Trigger:** User asks about weight, body fat, lean mass, fat percentage, or weight trend.
+
+### STEP 1 — Query body composition data (exec, mandatory)
+
+**YOU DO NOT KNOW THE USER'S BODY COMPOSITION DATA. DO NOT ANSWER WITHOUT
+RUNNING THIS EXEC. There is no other source of this data.**
+
+Default to 90 days unless the user specifies a different window.
+
+```
+exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py body-metrics --days 90
+```
+
+Examples:
+- "what's my weight trend" → `--days 90`
+- "body fat last 6 months" → `--days 180`
+
+### STEP 2 — Synthesize and reply (reply, mandatory)
+
+Parse the JSON output and reply in natural language. Include:
+- Most recent weight and body fat percentage with date
+- Trend direction over the period (gaining, losing, stable)
+- Lean mass direction if available
+
+**Hard rules: NEVER reply with raw JSON. NEVER mention script paths. NEVER provide medical advice.**
+
+**If exec returns an error or no data:** "I don't have any body composition data in that window."
+
+---
+
+## Intent 10 — Activity
+
+**Trigger:** User asks about steps, activity level, time outside, or daylight exposure.
+
+### STEP 1 — Query activity data (exec, mandatory)
+
+**YOU DO NOT KNOW THE USER'S ACTIVITY DATA. DO NOT ANSWER WITHOUT
+RUNNING THIS EXEC. There is no other source of this data.**
+
+Default to 14 days unless the user specifies a different window.
+
+```
+exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py activity --days 14
+```
+
+Examples:
+- "how many steps this week" → `--days 7`
+- "activity last month" → `--days 30`
+
+### STEP 2 — Synthesize and reply (reply, mandatory)
+
+Parse the JSON output and reply in natural language. Include:
+- Average daily steps over the period
+- Best and lowest step days if notable
+- Time outside or daylight exposure if present in the data
+
+**Hard rules: NEVER reply with raw JSON. NEVER mention script paths. NEVER provide medical advice.**
+
+**If exec returns an error or no data:** "I don't have any activity data in that window."
+
+---
+
+## Intent 11 — Workouts
+
+**Trigger:** User asks about workout history, exercise frequency, gym sessions, or training summary.
+
+### STEP 1 — Query workout data (exec, mandatory)
+
+**YOU DO NOT KNOW THE USER'S WORKOUT HISTORY. DO NOT ANSWER WITHOUT
+RUNNING THIS EXEC. There is no other source of this data.**
+
+Default to 30 days unless the user specifies a different window.
+
+```
+exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py workouts --days 30
+```
+
+Examples:
+- "did I work out this week" → `--days 7`
+- "my training last 2 months" → `--days 60`
+
+### STEP 2 — Synthesize and reply (reply, mandatory)
+
+Parse the JSON output and reply in natural language. Include:
+- Number of workout sessions in the period
+- Types of workouts if available (strength, cardio, etc.)
+- Any trend in frequency or duration
+
+**Hard rules: NEVER reply with raw JSON. NEVER mention script paths. NEVER provide medical advice.**
+
+**If exec returns an error or no data:** "I don't have any workout data in that window."
+
+---
+
+## Intent 12 — Workout Exercises
+
+**Trigger:** User asks about specific exercises performed, sets and reps, strength training detail, or what they did at the gym.
+
+### STEP 1 — Query workout exercise data (exec, mandatory)
+
+**YOU DO NOT KNOW THE USER'S EXERCISE DETAIL. DO NOT ANSWER WITHOUT
+RUNNING THIS EXEC. There is no other source of this data.**
+
+Default to 7 days unless the user specifies a different window.
+
+```
+exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py workout-exercises --days 7
+```
+
+Examples:
+- "what did I do at the gym yesterday" → `--days 1`
+- "my exercises this week" → `--days 7`
+
+### STEP 2 — Synthesize and reply (reply, mandatory)
+
+Parse the JSON output and reply in natural language. Include:
+- Exercises performed with sets and reps where available
+- Workout date(s) covered
+- Any progression notes if present in the data
+
+**Hard rules: NEVER reply with raw JSON. NEVER mention script paths. NEVER provide medical advice.**
+
+**If exec returns an error or no data:** "I don't have any exercise detail in that window."
+
+---
+
+## Intent 13 — Tags
+
+**Trigger:** User asks about Oura tags, sauna days, alcohol tags, or any tagged activity trend.
+
+### STEP 1 — Query tag data (exec, mandatory)
+
+**YOU DO NOT KNOW THE USER'S OURA TAGS. DO NOT ANSWER WITHOUT
+RUNNING THIS EXEC. There is no other source of this data.**
+
+Default to 30 days unless the user specifies a different window.
+
+```
+exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py tags --days 30
+```
+
+Examples:
+- "my sauna days this month" → `--days 30`
+- "how often did I have alcohol in the last 60 days" → `--days 60`
+
+### STEP 2 — Synthesize and reply (reply, mandatory)
+
+Parse the JSON output and reply in natural language. Include:
+- Frequency of each tag type over the period
+- Any notable patterns (e.g. "12 sauna sessions in 30 days")
+- Trend if the same tag appears across multiple months
+
+**Hard rules: NEVER reply with raw JSON. NEVER mention script paths. NEVER provide medical advice.**
+
+**If exec returns an error or no data:** "I don't have any tag data in that window."
 
 ---
 
