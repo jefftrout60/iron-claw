@@ -98,6 +98,16 @@ For body composition ("my weight", "body fat", "lean mass", "fat percentage", "w
 exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py body-metrics --days 90
 ```
 
+For activity ("my steps", "steps this week", "how active", "time outside", "daylight"):
+```
+exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py activity --days 14
+```
+
+For workouts ("my workouts", "did I exercise", "gym this week", "workout summary", "training last"):
+```
+exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py workouts --days 30
+```
+
 If exec returns `{"error": "marker not found: X"}`, tell the user you couldn't find that marker name and suggest checking the spelling. Do NOT say you don't have access.
 
 ### Rule 6c: Blood pressure readings — ask timing first, log immediately, no medical advice

@@ -391,6 +391,121 @@ class TestBodyMetrics(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# activity_query tests
+# ---------------------------------------------------------------------------
+
+class TestActivityQuery(unittest.TestCase):
+    """Tests for health_query.activity_query()."""
+
+    def setUp(self):
+        self.conn = _make_conn()
+        self._original_get_connection = health_db.get_connection
+        health_query.health_db.get_connection = lambda *a, **kw: self.conn
+
+    def tearDown(self):
+        health_db.get_connection = self._original_get_connection
+        self.conn.close()
+
+    def _insert_activity(self, date_str, steps=None, daylight_minutes=None):
+        self.conn.execute(
+            """INSERT INTO activity_daily (date, steps, daylight_minutes, source)
+               VALUES (?, ?, ?, 'apple_health')""",
+            (date_str, steps, daylight_minutes),
+        )
+        self.conn.commit()
+
+    def test_returns_correct_top_level_keys(self):
+        self._insert_activity("2099-01-15", steps=8000, daylight_minutes=45)
+        result = health_query.activity_query(90, "2099-01-01", "2099-12-31")
+        for key in ("days_requested", "days_available", "data", "summary"):
+            self.assertIn(key, result, f"Missing top-level key: {key}")
+
+    def test_days_window_filters_outside_rows(self):
+        # Row outside window should not appear
+        self._insert_activity("2099-01-01", steps=5000)
+        # Row inside window
+        self._insert_activity("2099-03-20", steps=9000)
+        result = health_query.activity_query(90, "2099-03-01", "2099-03-31")
+        self.assertEqual(result["days_available"], 1)
+        self.assertEqual(result["data"][0]["date"], "2099-03-20")
+
+    def test_no_data_raises_system_exit(self):
+        with self.assertRaises(SystemExit):
+            health_query.activity_query(14, None, None)
+
+    def test_null_daylight_omitted_from_row(self):
+        # Insert row with steps only — no daylight_minutes
+        self._insert_activity("2099-02-10", steps=7500, daylight_minutes=None)
+        result = health_query.activity_query(90, "2099-01-01", "2099-12-31")
+        row = result["data"][0]
+        self.assertIn("steps", row)
+        self.assertNotIn("daylight_minutes", row)
+
+    def test_summary_avg_steps_correct(self):
+        self._insert_activity("2099-01-10", steps=6000)
+        self._insert_activity("2099-01-11", steps=10000)
+        result = health_query.activity_query(90, "2099-01-01", "2099-12-31")
+        self.assertAlmostEqual(result["summary"]["avg_steps"], 8000.0, places=1)
+
+
+# ---------------------------------------------------------------------------
+# workouts_query tests
+# ---------------------------------------------------------------------------
+
+class TestWorkoutsQuery(unittest.TestCase):
+    """Tests for health_query.workouts_query()."""
+
+    def setUp(self):
+        self.conn = _make_conn()
+        self._original_get_connection = health_db.get_connection
+        health_query.health_db.get_connection = lambda *a, **kw: self.conn
+
+    def tearDown(self):
+        health_db.get_connection = self._original_get_connection
+        self.conn.close()
+
+    def _insert_workout(self, date_str, start_time, workout_type,
+                        duration_min=None, calories=None, avg_hr=None, max_hr=None):
+        self.conn.execute(
+            """INSERT INTO workouts
+                   (date, start_time, workout_type, duration_min, calories,
+                    avg_hr, max_hr, source)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'apple_health')""",
+            (date_str, start_time, workout_type, duration_min, calories, avg_hr, max_hr),
+        )
+        self.conn.commit()
+
+    def test_returns_correct_top_level_keys(self):
+        self._insert_workout("2099-01-15", "07:00", "Running", duration_min=30)
+        result = health_query.workouts_query(30, "2099-01-01", "2099-12-31", None)
+        for key in ("days_requested", "total_workouts", "data", "summary"):
+            self.assertIn(key, result, f"Missing top-level key: {key}")
+
+    def test_type_filter_case_insensitive(self):
+        # Insert "FunctionalStrengthTraining"; query with "strength"
+        self._insert_workout("2099-02-05", "06:00", "FunctionalStrengthTraining",
+                             duration_min=45)
+        self._insert_workout("2099-02-06", "07:00", "Running", duration_min=30)
+        result = health_query.workouts_query(90, "2099-01-01", "2099-12-31", "strength")
+        self.assertEqual(result["total_workouts"], 1)
+        self.assertEqual(result["data"][0]["workout_type"], "FunctionalStrengthTraining")
+
+    def test_no_data_raises_system_exit(self):
+        with self.assertRaises(SystemExit):
+            health_query.workouts_query(30, None, None, None)
+
+    def test_summary_by_type_groups_correctly(self):
+        self._insert_workout("2099-03-01", "06:00", "Running", duration_min=30)
+        self._insert_workout("2099-03-02", "06:00", "Running", duration_min=35)
+        self._insert_workout("2099-03-03", "06:00", "FunctionalStrengthTraining",
+                             duration_min=45)
+        result = health_query.workouts_query(90, "2099-01-01", "2099-12-31", None)
+        by_type = result["summary"]["by_type"]
+        self.assertEqual(by_type["Running"], 2)
+        self.assertEqual(by_type["FunctionalStrengthTraining"], 1)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
