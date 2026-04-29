@@ -51,11 +51,20 @@ def get_connection(db_path: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
+SCHEMA_VERSION = 3
+
+
 def initialize_schema(conn: sqlite3.Connection) -> None:
     """
     Create all tables, indexes, FTS virtual table, and triggers if they do not
     already exist.  Safe to call repeatedly — every statement uses IF NOT EXISTS.
+
+    Schema versions (PRAGMA user_version):
+      0 → 1 : original tables (health_knowledge, lab_*, oura_*, blood_pressure)
+      1 → 2 : body_metrics
+      2 → 3 : activity_daily, workouts
     """
+    _version = conn.execute("PRAGMA user_version").fetchone()[0]
     # ---------- health_knowledge ----------------------------------------
     conn.execute("""
         CREATE TABLE IF NOT EXISTS health_knowledge (
@@ -266,4 +275,73 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         ON blood_pressure(date)
     """)
 
-    conn.commit()
+    # Stamp version 1 for any DB that has the original tables but no version yet
+    if _version < 1:
+        conn.execute(f"PRAGMA user_version = 1")
+        conn.commit()
+        _version = 1
+
+    # ---------- v2: body_metrics ----------------------------------------
+    if _version < 2:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS body_metrics (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                date            TEXT NOT NULL,
+                time            TEXT,
+                weight_lbs      REAL,
+                fat_ratio_pct   REAL,
+                fat_mass_lbs    REAL,
+                lean_mass_lbs   REAL,
+                muscle_mass_lbs REAL,
+                source          TEXT DEFAULT 'withings_api',
+                fetched_at      TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+            )
+        """)
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_body_metrics_datetime
+            ON body_metrics(date, time)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_body_metrics_date
+            ON body_metrics(date)
+        """)
+        conn.execute("PRAGMA user_version = 2")
+        conn.commit()
+        _version = 2
+
+    # ---------- v3: activity_daily + workouts ---------------------------
+    if _version < 3:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS activity_daily (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                date             TEXT NOT NULL UNIQUE,
+                steps            INTEGER,
+                daylight_minutes REAL,
+                source           TEXT DEFAULT 'apple_health',
+                fetched_at       TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS workouts (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                date            TEXT NOT NULL,
+                start_time      TEXT,
+                end_time        TEXT,
+                workout_type    TEXT NOT NULL,
+                duration_min    REAL,
+                calories        REAL,
+                avg_hr          INTEGER,
+                max_hr          INTEGER,
+                effort_rating   TEXT,
+                source          TEXT DEFAULT 'apple_health',
+                notes           TEXT,
+                fetched_at      TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_workouts_key
+            ON workouts(date, start_time, workout_type);
+
+            CREATE INDEX IF NOT EXISTS idx_workouts_date
+            ON workouts(date);
+        """)
+        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        conn.commit()
