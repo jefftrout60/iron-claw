@@ -19,12 +19,15 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import logging
 import re
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from html.parser import HTMLParser
 from pathlib import Path
 import xml.etree.ElementTree as ET
+
+log = logging.getLogger(__name__)
 
 # health_db lives in workspace/health/
 _REPO_ROOT = Path(__file__).parent.parent
@@ -124,6 +127,76 @@ def extract_table_rows(content_html: str) -> list[list[str]]:
 
 
 # ---------------------------------------------------------------------------
+# Task 3.4: Exercise text parser
+# ---------------------------------------------------------------------------
+
+_EXERCISE_RE = re.compile(
+    r'^(?P<name>.+?)\s+'
+    r'(?P<sets>\d+)\s*[×xX]\s*(?P<reps>\d+)'
+    r'(?:\s*@?\s*(?P<weight>[\d.]+)\s*(?P<unit>lbs?|kg)?)?',
+    re.IGNORECASE
+)
+
+
+def parse_exercise_text(text: str) -> list[dict]:
+    """Parse exercise cell text into list of exercise dicts.
+
+    Each non-empty line is treated as one exercise entry.
+    Falls back to storing raw text in notes if regex doesn't match.
+    """
+    results = []
+    for i, line in enumerate(text.splitlines(), start=1):
+        line = line.strip()
+        if not line:
+            continue
+        m = _EXERCISE_RE.match(line)
+        if m:
+            weight = float(m.group("weight")) if m.group("weight") else None
+            unit = (m.group("unit") or "lbs").lower().rstrip("s")
+            if unit == "kg" and weight is not None:
+                weight = round(weight * 2.20462, 2)
+            results.append({
+                "exercise_name": m.group("name").strip(),
+                "set_number": i,
+                "reps": int(m.group("reps")),
+                "weight_lbs": weight,
+                "notes": None,
+            })
+        else:
+            results.append({
+                "exercise_name": line,
+                "set_number": i,
+                "reps": None,
+                "weight_lbs": None,
+                "notes": line,
+            })
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Task 3.5: Week date derivation helper
+# ---------------------------------------------------------------------------
+
+def _week_monday(title: str, created: date) -> date | None:
+    """Derive the Monday of the week referenced in a note title.
+
+    Week numbers > 52 are likely sequential IDs (e.g. "Week 1826"), not ISO
+    week numbers — fall back to the Monday of the created_date's own week.
+    """
+    m = re.search(r'Week (\d+)', title, re.IGNORECASE)
+    if not m:
+        return None
+    week_num = int(m.group(1))
+    # Week numbers > 52 are sequential IDs, not ISO weeks
+    if week_num > 52:
+        return created - timedelta(days=created.weekday())
+    try:
+        return date.fromisocalendar(created.year, week_num, 1)
+    except ValueError:
+        return created - timedelta(days=created.weekday())
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -158,10 +231,75 @@ def main() -> None:
         print("Dry run — no DB writes")
         return
 
-    # Exercise parsing and DB import handled in tasks 3.4 and 3.5
-    print(
-        f"Parsed {len(all_rows)} notes — run without --dry-run after tasks 3.4/3.5 are complete"
-    )
+    # Task 3.5: link exercises to workouts and write to DB
+    day_offsets = {
+        "monday": 0, "tuesday": 1, "wednesday": 2,
+        "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6,
+    }
+
+    conn = health_db.get_connection()
+    total_exercises = 0
+
+    for title, created, rows in all_rows:
+        week_start = _week_monday(title, created)
+        if not week_start:
+            log.warning("Could not derive week date from: %s", title)
+            continue
+
+        for row in rows:
+            if len(row) < 3:
+                continue
+            day_raw = row[0].strip().lower()
+            actual_text = row[2].strip() if len(row) > 2 else ""
+            if not actual_text or not day_raw:
+                continue
+
+            offset = day_offsets.get(day_raw)
+            if offset is None:
+                continue  # header row or unrecognized day name
+
+            workout_date = (week_start + timedelta(days=offset)).isoformat()
+
+            # Find or create a workouts row to link exercises against
+            workout_id = None
+            row_match = conn.execute(
+                """SELECT id FROM workouts
+                   WHERE date = ? AND workout_type LIKE '%Strength%'
+                   LIMIT 1""",
+                (workout_date,),
+            ).fetchone()
+            if row_match:
+                workout_id = row_match[0]
+            else:
+                cursor = conn.execute(
+                    """INSERT OR IGNORE INTO workouts (date, workout_type, source)
+                       VALUES (?, 'FunctionalStrengthTraining', 'evernote')""",
+                    (workout_date,),
+                )
+                if cursor.lastrowid:
+                    workout_id = cursor.lastrowid
+
+            # Delete existing exercises for this date before re-import (idempotent)
+            conn.execute(
+                "DELETE FROM workout_exercises WHERE workout_date = ?",
+                (workout_date,),
+            )
+
+            exercises = parse_exercise_text(actual_text)
+            for ex in exercises:
+                conn.execute(
+                    """INSERT INTO workout_exercises
+                         (workout_id, workout_date, exercise_name, set_number, reps, weight_lbs, notes)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (workout_id, workout_date, ex["exercise_name"],
+                     ex["set_number"], ex["reps"], ex["weight_lbs"], ex["notes"]),
+                )
+            total_exercises += len(exercises)
+
+        conn.commit()
+
+    conn.close()
+    print(f"Imported {total_exercises} exercise records from {len(all_rows)} notes")
 
 
 if __name__ == "__main__":
