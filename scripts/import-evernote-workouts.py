@@ -69,18 +69,10 @@ def parse_enex(filepath: str | Path):
         if not NOTE_TITLE_RE.search(title):
             continue
 
-        created_str = (note.findtext("created") or "").strip()
-        try:
-            created = datetime.strptime(created_str, ENEX_DATE_FORMAT).date()
-        except ValueError:
-            continue
-
-        if created < date(2025, 1, 1):
-            continue
-
         content = note.findtext("content") or ""
         if content:
-            yield title, created, content
+            # Pass title twice; _week_monday derives the actual date from title
+            yield title, date(2025, 1, 1), content
 
 
 # ---------------------------------------------------------------------------
@@ -180,23 +172,21 @@ def parse_exercise_text(text: str) -> list[dict]:
 # Task 3.5: Week date derivation helper
 # ---------------------------------------------------------------------------
 
-def _week_monday(title: str, created: date) -> date | None:
+def _week_monday(title: str, created: date) -> date:
     """Derive the Monday of the week referenced in a note title.
 
-    Week numbers > 52 are likely sequential IDs (e.g. "Week 1826"), not ISO
-    week numbers — fall back to the Monday of the created_date's own week.
+    Title format: "Week WWYY Training Plan" where WW = ISO week (01-52)
+    and YY = 2-digit year (25 = 2025, 26 = 2026).
     """
-    m = re.search(r'Week (\d+)', title, re.IGNORECASE)
+    m = re.search(r'Week (\d{2})(\d{2})', title, re.IGNORECASE)
     if not m:
-        return None
+        return created
     week_num = int(m.group(1))
-    # Week numbers > 52 are sequential IDs, not ISO weeks
-    if week_num > 52:
-        return created - timedelta(days=created.weekday())
+    year = 2000 + int(m.group(2))
     try:
-        return date.fromisocalendar(created.year, week_num, 1)
+        return date.fromisocalendar(year, week_num, 1)
     except ValueError:
-        return created - timedelta(days=created.weekday())
+        return created
 
 
 # ---------------------------------------------------------------------------
@@ -252,14 +242,19 @@ def main() -> None:
         for row in rows:
             if len(row) < 3:
                 continue
-            day_raw = row[0].strip().lower()
+            # Day cell may contain date concatenated: "Monday12/30" → extract day name
+            day_cell = row[0].strip().lower()
+            day_match = re.match(r'(monday|tuesday|wednesday|thursday|friday|saturday|sunday)', day_cell)
+            if not day_match:
+                continue  # header row or unrecognized
+            day_raw = day_match.group(1)
             actual_text = row[2].strip() if len(row) > 2 else ""
-            if not actual_text or not day_raw:
+            if not actual_text:
                 continue
 
             offset = day_offsets.get(day_raw)
             if offset is None:
-                continue  # header row or unrecognized day name
+                continue
 
             workout_date = (week_start + timedelta(days=offset)).isoformat()
 

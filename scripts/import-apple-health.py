@@ -133,7 +133,7 @@ def parse_export(filepath: Path):
     return bp_pairs, body_records, steps_by_date, daylight_by_date, workouts
 
 
-def _parse_workout(elem) -> dict | None:
+def _parse_workout(elem):
     """Extract workout fields from a <Workout> element."""
     workout_type_raw = elem.get("workoutActivityType", "")
     start_date_str = elem.get("startDate", "")
