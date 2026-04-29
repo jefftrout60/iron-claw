@@ -108,6 +108,16 @@ For workouts ("my workouts", "did I exercise", "gym this week", "workout summary
 exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py workouts --days 30
 ```
 
+For workout detail ("what did I do at the gym", "my exercises", "sets and reps", "strength training detail", "what exercises"):
+```
+exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py workout-exercises --days 7
+```
+
+For Oura tags ("my sauna days", "sauna this month", "alcohol tags", "Oura tags", "tag trends", "when did I"):
+```
+exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py tags --days 30
+```
+
 If exec returns `{"error": "marker not found: X"}`, tell the user you couldn't find that marker name and suggest checking the spelling. Do NOT say you don't have access.
 
 ### Rule 6c: Blood pressure readings — ask timing first, log immediately, no medical advice
