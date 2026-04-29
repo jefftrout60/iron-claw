@@ -288,6 +288,109 @@ class TestSearchKnowledge(HealthQueryTestCase):
 
 
 # ---------------------------------------------------------------------------
+# body_metrics_query tests
+# ---------------------------------------------------------------------------
+
+class TestBodyMetrics(unittest.TestCase):
+    """Tests for health_query.body_metrics_query()."""
+
+    def setUp(self):
+        self.conn = _make_conn()
+        self._original_get_connection = health_db.get_connection
+        health_query.health_db.get_connection = lambda *a, **kw: self.conn
+
+    def tearDown(self):
+        health_db.get_connection = self._original_get_connection
+        self.conn.close()
+
+    def _insert_metric(self, date_str, time_str, weight_lbs, fat_ratio_pct=None):
+        self.conn.execute(
+            """INSERT INTO body_metrics (date, time, weight_lbs, fat_ratio_pct, source)
+               VALUES (?, ?, ?, ?, 'withings_api')""",
+            (date_str, time_str, weight_lbs, fat_ratio_pct),
+        )
+        self.conn.commit()
+
+    def test_returns_correct_top_level_keys(self):
+        self._insert_metric("2026-01-15", "08:00", 185.0, 22.5)
+        result = health_query.body_metrics_query(90, "2026-01-01", "2026-12-31")
+        for key in ("days_requested", "readings", "data", "summary"):
+            self.assertIn(key, result, f"Missing top-level key: {key}")
+
+    def test_data_row_has_expected_fields(self):
+        self._insert_metric("2026-01-15", "08:00", 185.0, 22.5)
+        result = health_query.body_metrics_query(90, "2026-01-01", "2026-12-31")
+        row = result["data"][0]
+        for field in ("date", "time", "weight_lbs", "fat_ratio_pct",
+                      "fat_mass_lbs", "lean_mass_lbs", "muscle_mass_lbs", "source"):
+            self.assertIn(field, row, f"Missing field: {field}")
+
+    def test_summary_has_expected_keys(self):
+        self._insert_metric("2026-01-15", "08:00", 185.0, 22.5)
+        self._insert_metric("2026-01-20", "08:00", 184.0, 22.0)
+        result = health_query.body_metrics_query(90, "2026-01-01", "2026-12-31")
+        for key in ("avg_weight_lbs", "min_weight_lbs", "max_weight_lbs",
+                    "avg_fat_ratio_pct", "latest"):
+            self.assertIn(key, result["summary"], f"Missing summary key: {key}")
+
+    def test_readings_count_matches_rows(self):
+        self._insert_metric("2026-01-15", "08:00", 185.0)
+        self._insert_metric("2026-01-20", "08:00", 184.0)
+        self._insert_metric("2026-01-25", "08:00", 183.5)
+        result = health_query.body_metrics_query(90, "2026-01-01", "2026-12-31")
+        self.assertEqual(result["readings"], 3)
+        self.assertEqual(len(result["data"]), 3)
+
+    def test_days_window_filters_correctly(self):
+        # Insert one old row (outside 30-day window) and one recent row
+        self._insert_metric("2025-01-01", "08:00", 190.0)
+        self._insert_metric("2026-01-15", "08:00", 185.0)
+        from unittest.mock import patch
+        from datetime import date
+        with patch("health_query.date") as mock_date:
+            mock_date.today.return_value = date(2026, 1, 20)
+            mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+            result = health_query.body_metrics_query(30, None, None)
+        # Only the 2026-01-15 row falls within 30 days of 2026-01-20
+        self.assertEqual(result["readings"], 1)
+        self.assertEqual(result["data"][0]["date"], "2026-01-15")
+
+    def test_start_end_overrides_days(self):
+        self._insert_metric("2026-01-01", "08:00", 186.0)
+        self._insert_metric("2026-02-01", "08:00", 185.0)
+        self._insert_metric("2026-03-01", "08:00", 184.0)
+        # --start/--end narrows to Jan only
+        result = health_query.body_metrics_query(90, "2026-01-01", "2026-01-31")
+        self.assertEqual(result["readings"], 1)
+        self.assertEqual(result["data"][0]["date"], "2026-01-01")
+
+    def test_summary_averages_correct(self):
+        self._insert_metric("2026-01-15", "08:00", 185.0, 22.0)
+        self._insert_metric("2026-01-20", "08:00", 183.0, 21.0)
+        result = health_query.body_metrics_query(90, "2026-01-01", "2026-12-31")
+        self.assertAlmostEqual(result["summary"]["avg_weight_lbs"], 184.0, places=1)
+        self.assertAlmostEqual(result["summary"]["avg_fat_ratio_pct"], 21.5, places=1)
+        self.assertEqual(result["summary"]["min_weight_lbs"], 183.0)
+        self.assertEqual(result["summary"]["max_weight_lbs"], 185.0)
+
+    def test_latest_is_most_recent_row(self):
+        self._insert_metric("2026-01-15", "08:00", 185.0, 22.0)
+        self._insert_metric("2026-02-01", "08:00", 183.0, 21.0)
+        result = health_query.body_metrics_query(90, "2026-01-01", "2026-12-31")
+        self.assertEqual(result["summary"]["latest"]["date"], "2026-02-01")
+        self.assertAlmostEqual(result["summary"]["latest"]["weight_lbs"], 183.0, places=1)
+
+    def test_no_data_raises_system_exit(self):
+        with self.assertRaises(SystemExit):
+            health_query.body_metrics_query(90, None, None)
+
+    def test_empty_window_raises_system_exit(self):
+        self._insert_metric("2025-01-01", "08:00", 185.0)
+        with self.assertRaises(SystemExit):
+            health_query.body_metrics_query(90, "2026-06-01", "2026-06-30")
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
