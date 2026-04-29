@@ -8,6 +8,8 @@ Subcommands (all output JSON to stdout):
   search          --query TEXT [--limit N]
   blood-pressure  [--days N] [--start YYYY-MM-DD] [--end YYYY-MM-DD]
   body-metrics    [--days N] [--start YYYY-MM-DD] [--end YYYY-MM-DD]
+  activity        [--days N] [--start YYYY-MM-DD] [--end YYYY-MM-DD]
+  workouts        [--days N] [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--type TYPE]
 
 Exit 0 on success, exit 1 with {"error": "..."} JSON on failure.
 """
@@ -300,6 +302,129 @@ def body_metrics_query(days: int, start: str | None, end: str | None) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# activity
+# ---------------------------------------------------------------------------
+
+def activity_query(days: int, start: str | None, end: str | None) -> dict:
+    conn = health_db.get_connection()
+
+    end_date = end if end else date.today().isoformat()
+    start_date = start if start else (date.today() - timedelta(days=days)).isoformat()
+
+    rows = conn.execute(
+        "SELECT date, steps, daylight_minutes FROM activity_daily"
+        " WHERE date >= ? AND date <= ? ORDER BY date ASC",
+        (start_date, end_date),
+    ).fetchall()
+
+    if not rows:
+        range_desc = f"{start_date} to {end_date}" if start else f"last {days} days"
+        _err(f"no activity data in {range_desc}")
+
+    data = []
+    for r in rows:
+        row_dict: dict = {"date": r["date"]}
+        if r["steps"] is not None:
+            row_dict["steps"] = r["steps"]
+        if r["daylight_minutes"] is not None:
+            row_dict["daylight_minutes"] = r["daylight_minutes"]
+        data.append(row_dict)
+
+    steps_vals = [r["steps"] for r in rows if r["steps"] is not None]
+    daylight_vals = [r["daylight_minutes"] for r in rows if r["daylight_minutes"] is not None]
+
+    summary: dict = {}
+    if steps_vals:
+        summary["avg_steps"] = round(sum(steps_vals) / len(steps_vals), 1)
+    if daylight_vals:
+        summary["avg_daylight_min"] = round(sum(daylight_vals) / len(daylight_vals), 1)
+        summary["total_daylight_hours"] = round(sum(daylight_vals) / 60, 1)
+
+    return {
+        "days_requested": days,
+        "days_available": len(rows),
+        "data": data,
+        "summary": summary,
+    }
+
+
+# ---------------------------------------------------------------------------
+# workouts
+# ---------------------------------------------------------------------------
+
+def workouts_query(days: int, start: str | None, end: str | None,
+                   workout_type: str | None) -> dict:
+    conn = health_db.get_connection()
+
+    end_date = end if end else date.today().isoformat()
+    start_date = start if start else (date.today() - timedelta(days=days)).isoformat()
+
+    if workout_type:
+        # Escape LIKE wildcards in user input before embedding in % pattern
+        escaped_type = (
+            workout_type.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        )
+        rows = conn.execute(
+            "SELECT date, workout_type, duration_min, calories, avg_hr, max_hr, source"
+            " FROM workouts"
+            " WHERE date >= ? AND date <= ? AND workout_type LIKE ? ESCAPE '\\'"
+            " ORDER BY date ASC, start_time ASC",
+            (start_date, end_date, f"%{escaped_type}%"),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT date, workout_type, duration_min, calories, avg_hr, max_hr, source"
+            " FROM workouts"
+            " WHERE date >= ? AND date <= ?"
+            " ORDER BY date ASC, start_time ASC",
+            (start_date, end_date),
+        ).fetchall()
+
+    if not rows:
+        range_desc = f"{start_date} to {end_date}" if start else f"last {days} days"
+        filter_desc = f" (type filter: {workout_type})" if workout_type else ""
+        _err(f"no workouts in {range_desc}{filter_desc}")
+
+    data = []
+    for r in rows:
+        row_dict: dict = {
+            "date": r["date"],
+            "workout_type": r["workout_type"],
+            "source": r["source"],
+        }
+        if r["duration_min"] is not None:
+            row_dict["duration_min"] = r["duration_min"]
+        if r["calories"] is not None:
+            row_dict["calories"] = r["calories"]
+        if r["avg_hr"] is not None:
+            row_dict["avg_hr"] = r["avg_hr"]
+        if r["max_hr"] is not None:
+            row_dict["max_hr"] = r["max_hr"]
+        data.append(row_dict)
+
+    by_type: dict = {}
+    for r in rows:
+        wtype = r["workout_type"]
+        by_type[wtype] = by_type.get(wtype, 0) + 1
+
+    duration_vals = [r["duration_min"] for r in rows if r["duration_min"] is not None]
+    calorie_vals = [r["calories"] for r in rows if r["calories"] is not None]
+
+    summary: dict = {"by_type": by_type}
+    if duration_vals:
+        summary["avg_duration_min"] = round(sum(duration_vals) / len(duration_vals), 1)
+    if calorie_vals:
+        summary["total_calories"] = round(sum(calorie_vals), 0)
+
+    return {
+        "days_requested": days,
+        "total_workouts": len(rows),
+        "data": data,
+        "summary": summary,
+    }
+
+
+# ---------------------------------------------------------------------------
 # search
 # ---------------------------------------------------------------------------
 
@@ -383,6 +508,18 @@ def main() -> None:
     bm.add_argument("--start", help="Start date YYYY-MM-DD (overrides --days)")
     bm.add_argument("--end", help="End date YYYY-MM-DD (default: today)")
 
+    ac = sub.add_parser("activity", help="Daily steps and daylight exposure")
+    ac.add_argument("--days", type=int, default=14)
+    ac.add_argument("--start", help="Start date YYYY-MM-DD (overrides --days)")
+    ac.add_argument("--end", help="End date YYYY-MM-DD (default: today)")
+
+    wo = sub.add_parser("workouts", help="Workout sessions from Apple Watch")
+    wo.add_argument("--days", type=int, default=30)
+    wo.add_argument("--start", help="Start date YYYY-MM-DD (overrides --days)")
+    wo.add_argument("--end", help="End date YYYY-MM-DD (default: today)")
+    wo.add_argument("--type", dest="workout_type",
+                    help="Case-insensitive substring filter on workout_type")
+
     args = parser.parse_args()
 
     if args.command == "lab-trend":
@@ -398,6 +535,10 @@ def main() -> None:
                         args.reading_date, args.reading_time, args.notes)
     elif args.command == "body-metrics":
         result = body_metrics_query(args.days, args.start, args.end)
+    elif args.command == "activity":
+        result = activity_query(args.days, args.start, args.end)
+    elif args.command == "workouts":
+        result = workouts_query(args.days, args.start, args.end, args.workout_type)
     _out(result)
 
 
