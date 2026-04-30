@@ -132,3 +132,7 @@ agents/*/workspace/skills/podcast-summary/podcast_vault/*.db-wal
 # Agent workspace runtime outputs (weather lookups, task logs, etc.)
 agents/*/workspace/*-weather-*.json
 agents/*/workspace/TODO.md
+
+# Health DB backups and generated reports
+agents/sample-agent/workspace/health/backups/
+bp_report_*.html

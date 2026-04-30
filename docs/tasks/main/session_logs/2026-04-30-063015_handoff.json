@@ -1,0 +1,90 @@
+{
+  "version": "1.1",
+  "timestamp": "2026-04-30-063015",
+  "branch_name": "main",
+  "task_name": "Apple Health Multi-Source Health Data Import + Architecture Hardening",
+  "session_number": 10,
+  "continuity": {
+    "started": "2026-04-26",
+    "sessions_reviewed": 3,
+    "arc_goal": "Consolidate Withings, Apple Health, Evernote, and Oura tag data into health.db to enable cross-pillar correlation queries via iMessage (HRV vs workout intensity, BP vs sleep, body fat% vs BP trend, sauna tags vs recovery metrics). Multi-session data source integration with complete read layer (health_query.py with 8 subcommands, cost_summary.py, health-query SKILL.md) with BP pillar complete, weekly email, and spend tracking."
+  },
+  "progress_update": {
+    "summary": "We completed the full health data import system and hardened it based on an architecture review. Built and shipped: Withings API OAuth2 sync, Apple Health XML streaming importer (all categories: BP, weight, body fat, steps, daylight, workouts), Evernote ENEX workout parser, Oura enhanced_tag sync, 5 new health_query.py subcommands (body-metrics, activity, workouts, workout-exercises, tags), AGENTS.md/SKILL.md wiring. Then ran spectre:clean, spectre:test (172 tests), spectre:evaluate with Opus architecture review, and addressed critical findings: moved Withings/Oura secrets from .env to macOS Keychain, added daily health sync launchd job, backup-health-db.sh, fixed Withings source mislabeling bug, fixed oura sync_tags field bug, consolidated AGENTS.md Rule 6b. Added desktop shortcut for Evernote weekly import. Captured 3 learnings in SPECTRE knowledge base.",
+    "goal": "Personal health intelligence via iMessage: query unified health.db across Withings body composition, Apple Health (BP, steps, daylight, workouts), Evernote workout detail, and Oura tags to enable cross-pillar correlation queries.",
+    "accomplished": [
+      "Complete health data import system: withings-sync.py (154+ body comp readings), import-apple-health.py (239 BP pairs, 6109 body records, 3835 step days, 1815 workouts), import-evernote-workouts.py (221 exercise records, 70 weeks), oura-sync.py tags extension (242 tags including 119 sauna)",
+      "5 new health_query.py subcommands: body-metrics, activity, workouts, workout-exercises, tags; AGENTS.md Rule 6b consolidated to table; SKILL.md Intents 9-13",
+      "172 tests passing across 6 test files; 3 new test files (test_apple_health.py, test_evernote_workouts.py, test_oura_sync_tags.py)",
+      "Security: Withings + Oura tokens migrated from .env to macOS Keychain (scripts/keychain.py); withings-sync.py token refresh now writes to Keychain",
+      "Ops: backup-health-db.sh (daily 7-day retention), daily-health-sync.sh, launchd plist com.ironclaw.health-sync (daily 03:00), Desktop shortcut for Evernote import",
+      "Architecture fixes: Withings source column bug (source=excluded.source in upsert), oura sync_tags field bug (or vs dict.get default), AGENTS.md 344 blank lines removed + Rule 6b table",
+      "3 SPECTRE skills: integration-withings-api, gotchas-apple-health-xml, gotchas-evernote-enex-parsing"
+    ],
+    "now": "Session complete. All code committed and pushed to origin/main. Agent restarted with updated AGENTS.md and SKILL.md.",
+    "next_steps": [
+      "Test iMessage queries: 'my weight', 'sauna days this month', 'workouts this week', 'what did I do at the gym' — verify all 5 new subcommands route and respond correctly",
+      "Rotate container secrets in .env (OpenAI, Telegram, Gmail app password) — the remaining plaintext secrets not yet moved to Keychain",
+      "Fix oura_daily.avg_hrv_rmssd permanently NULL column — populate from oura_sleep_sessions.avg_hrv for cross-pillar HRV correlation queries",
+      "Architecture review remaining items: centralize source-priority logic in health_db.py helper, add migration framework tests, add sync-status health_query.py subcommand",
+      "Weight pillar iMessage entry (Rule 6c pattern) + weekly summary email extension (include weight/workout trends)",
+      "iOS Shortcut → iCloud Drive for ongoing Apple Health automated sync (deferred from scope)"
+    ],
+    "confidence": "high",
+    "constraints": [
+      "Withings/Oura tokens now in macOS Keychain (com.ironclaw.withings, com.ironclaw.oura) — scripts/withings-auth.py for token refresh if needed",
+      "Container secrets (OpenAI, Telegram, Gmail) still in agents/sample-agent/.env for Docker",
+      "health.db at schema version 4 — next schema change requires version 5 migration block",
+      "Apple Health export: macOS privacy blocks ~/Downloads and ~/Desktop — drop export.xml into ironclaw folder or use --file flag",
+      "Evernote import is manual (API discontinued) — weekly Desktop shortcut 'Import Workout Notes.command'",
+      "Daily health sync cron: launchd com.ironclaw.health-sync runs backup → oura-sync → withings-sync at 03:00",
+      "AGENTS.md Rule 6b now a compact table (not 8 separate blocks) — model must exec before answering any health question",
+      "172 tests passing; test files in both scripts/ and agents/sample-agent/workspace/health/"
+    ],
+    "decisions": [
+      "Secrets in macOS Keychain not .env for host-side scripts (Withings + Oura); container secrets stay in .env for Docker",
+      "Evernote import uses WWYY title format (Week 0125 = ISO week 01 of 2025 = Dec 30, 2024 Monday); created date unreliable",
+      "AGENTS.md Rule 6b consolidated from 8 separate exec blocks to one compact table — reclaims ~4KB system prompt budget"
+    ],
+    "blockers": [],
+    "open_questions": [
+      "Architecture review: should source-priority logic be centralized in health_db.py upsert helper vs per-importer WHERE guards?",
+      "oura_daily.avg_hrv_rmssd: populate from sleep sessions or leave NULL and always JOIN?"
+    ],
+    "risks": [
+      "No tests for health_db.py migration framework itself (v0→v1→v4 upgrade path untested)",
+      "Apple Health BP pairing drops unpaired readings silently — no log of how many were dropped",
+      "Evernote workout_exercises idempotency: DELETE-then-INSERT is single-source only — if another source adds exercises for same date, re-import destroys them"
+    ]
+  },
+  "working_set": {
+    "key_files": [
+      "scripts/withings-sync.py",
+      "scripts/withings-auth.py",
+      "scripts/keychain.py",
+      "scripts/import-apple-health.py",
+      "scripts/import-evernote-workouts.py",
+      "scripts/oura-sync.py",
+      "scripts/backup-health-db.sh",
+      "scripts/daily-health-sync.sh",
+      "agents/sample-agent/workspace/health/health_db.py",
+      "agents/sample-agent/workspace/health/health_query.py",
+      "agents/sample-agent/workspace/AGENTS.md",
+      "agents/sample-agent/workspace/skills/health-query/SKILL.md"
+    ],
+    "active_ids": [],
+    "recent_commands": [
+      "python3 scripts/withings-sync.py --since 2026-04-30",
+      "python3 scripts/migrate-secrets-to-keychain.py",
+      "python3 scripts/import-apple-health.py --file /Users/jeff/ironclaw/export.xml",
+      "python3 scripts/import-evernote-workouts.py --file /Users/jeff/ironclaw/workouts.enex",
+      "python3 scripts/oura-sync.py --since 2025-01-01",
+      "git push origin main"
+    ]
+  },
+  "context": {
+    "wip_state": "clean",
+    "last_commit": "5db2752",
+    "session_arc": "10-session sprint on health-db multi-pillar system (Apr 26–30). S1 scoped health-db (SQLite, labs, Oura). S2 built phases 1-3: schema, blood_labs_history, oura_* tables. S3 added 4 test files + arch cleanup. S4 ran clean/test/evaluate, fixed 3 arch issues (busy_timeout, session grouping), disabled Telegram. S5 scoped health_query.py (3 subcommands, 6 intents). S6 built health_query: lab-history/oura-metrics/podcast-search subcommands + cost_summary.py + SKILL.md, 88 tests, enabled Perplexity, pushed. S7 debugged live routing: fixed AGENTS.md Rule 6b (forbidden phrases + exec paths), per-intent guardrails in SKILL.md (YOU DO NOT KNOW), skill config sync. S8 built BP pillar E2E (import + query + entry + tests + Intents 7-8 + Rules 6b+6c), fixed 3 arch issues (busy_timeout confirmed, session grouping extracted, procedures skill), 72 tests, 14 commits. S9 scoped multi-source import and completed Withings integration (OAuth2 + daily cron + 154 historical rows). S10 completed full system: Apple Health XML (all categories), Evernote ENEX parser, Oura tags, 5 new query subcommands, ran clean/test/evaluate (172 tests), hardened: Keychain security, daily launchd cron, backup script, fixed 2 bugs (Withings source, oura sync_tags), consolidated AGENTS.md Rule 6b to table, added 3 SPECTRE learnings. System shipped, tested, evaluated, and live."
+  }
+}

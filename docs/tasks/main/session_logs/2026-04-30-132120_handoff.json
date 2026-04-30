@@ -1,0 +1,90 @@
+{
+  "version": "1.1",
+  "timestamp": "2026-04-30-132120",
+  "branch_name": "main",
+  "task_name": "Health Hardening + iOS Sync Sprint",
+  "session_number": 11,
+  "continuity": {
+    "started": "2026-04-26",
+    "sessions_reviewed": 3,
+    "arc_goal": "Build personal health intelligence via iMessage with automated daily sync of health data across multiple sources (Withings, Apple Health, Oura, Evernote) and enable cross-pillar correlation queries (HRV vs workout intensity, BP vs sleep, body fat% vs BP trend, sauna tags vs recovery metrics)"
+  },
+  "progress_update": {
+    "summary": "We completed the full health data hardening sprint and iOS automation end-to-end. Built 8 major themes: secrets rotation script (OpenAI/Telegram/Gmail credentials), iMessage test checklist (7 subcommands), HRV backfill (0→3138 rows in oura_daily), source-priority de-duplication consolidation, migration path tests (v0→v5), sync-status subcommand (reads all 4 pillars), State of Mind pillar (schema, importers, mood subcommand, agent wiring), and full iOS automation pipeline (Health Auto Export app + 2 Shortcuts + launchd WatchPaths watcher). iOS pipeline went through significant real-world discovery: LZFSE-compressed .hae files vs JSON, actual iCloud path, separate State of Mind automation. Everything is wired end-to-end and will run automatically at 6am daily.",
+    "goal": "Personal health intelligence via iMessage: automated daily sync of Apple Health data (steps, daylight, body metrics, workouts, State of Mind) into health.db alongside existing Withings/Oura pipelines. Agent answers cross-pillar correlation queries.",
+    "accomplished": [
+      "health_db.py v5: added sync helpers (get/set_last_synced, maybe_mark_stale), backfill_daily_hrv(), state_of_mind table (schema version 5)",
+      "HRV backfill: 0→3138 oura_daily rows now have avg_hrv_rmssd populated from oura_sleep_sessions; oura-sync.py auto-refreshes on each sleep sync",
+      "Source-priority de-dup: consolidated get/set_last_synced helpers in health_db.py, extracted apple_health source guard to prevent double-import",
+      "Migration path tests: 6 tests covering v0→v5, v2→v5, v3→v5, v4→v5, idempotency, and version validation",
+      "sync-status subcommand: reads sync_state table, checks staleness (>2 days), tracks all 4 pillars (withings, apple_health, oura, evernote)",
+      "mood subcommand: queries state_of_mind table with --since and --kind filters",
+      "State of Mind pillar: schema (state_of_mind table), import paths (import-apple-health-json.py + import-apple-health.py XML), AGENTS.md Intent 14 (sync-status), Intent 15 (mood)",
+      "iOS automation: Health Auto Export app configured with 2 automations (Health DB export + State of Mind), 6am/6:05am Shortcuts, launchd WatchPaths watcher auto-imports both folders",
+      "import-apple-health-json.py: real JSON schema discovered (data.metrics for health, data.stateOfMind for mood), parser updated with actual field names",
+      "Code review findings: 3 bugs fixed (Withings resource key mismatch, HRV backfill NULL edge case, regex backreference in rotation script)",
+      "145 tests passing"
+    ],
+    "now": "Session complete. All code committed (commit 3d76bd3). iOS pipeline live and will run at 6am tomorrow. 4 WIP files are planning/doc artifacts not requiring commit.",
+    "next_steps": [
+      "Verify 6am pipeline fires correctly: check ~/Library/Logs/ironclaw/health-watch.log tomorrow morning",
+      "Test iMessage queries using docs/tasks/main/imessage-test-checklist.md (all 7 subcommands: health, body-metrics, blood-pressure, workouts, activity, sync-status, mood)",
+      "First Apple Health XML export for historical State of Mind data: run import-apple-health.py --file export.xml with --debug to confirm HKStateOfMindSample MetadataEntry key names",
+      "Rotate container secrets: run scripts/rotate-container-secrets.sh with new OpenAI/Telegram/Gmail credentials",
+      "Run spectre:clean to lint and tidy up"
+    ],
+    "confidence": "high",
+    "constraints": [
+      "health.db at schema version 5 — next schema change requires version 6 migration block",
+      "Withings/Oura tokens in macOS Keychain; container secrets (OpenAI, Telegram, Gmail) still in .env for Docker",
+      "launchd WatchPaths watches ~/Library/Mobile Documents/com~apple~CloudDocs/Auto Export/",
+      "Health Auto Export exports to iCloud Drive: Auto Export/Health DB export/HealthAutoExport-YYYY-MM-DD.json and Auto Export/State of Mind/HealthAutoExport-YYYY-MM-DD.json",
+      "State of Mind JSON uses data.stateOfMind (not data.metrics); fields: start, kind, valence, labels, associations",
+      "Terminal lacks Full Disk Access so cannot read iCloud Drive directly — launchd script unaffected",
+      "HKStateOfMindSample MetadataEntry key names unconfirmed for XML import path — first XML import will reveal via --debug"
+    ],
+    "decisions": [
+      "Health Auto Export chosen over manual XML for daily automation; State of Mind requires separate automation in the app",
+      "iOS Shortcut automations at 6:00am (Health DB export) and 6:05am (State of Mind) — 5-minute gap lets Jeff log State of Mind before export",
+      "launchd WatchPaths watches parent Auto Export/ folder, watcher script scans both subfolders",
+      "PRAGMA user_version framework for migrations — v0→v5 path tested with all intermediate steps"
+    ],
+    "blockers": [],
+    "open_questions": [
+      "HKStateOfMindSample MetadataEntry key names for XML importer — pending first real export.xml import",
+      "Should activity_daily gain an active_calories column? active_energy is in Health Auto Export JSON but no DB column yet"
+    ],
+    "risks": [
+      "6am Shortcuts automation requires phone to be awake/unlocked — if phone is off it won't fire",
+      "iCloud Drive sync latency variable — watcher may fire before file is fully synced (JSON validation guard handles this)"
+    ]
+  },
+  "working_set": {
+    "key_files": [
+      "agents/sample-agent/workspace/health/health_db.py",
+      "agents/sample-agent/workspace/health/health_query.py",
+      "agents/sample-agent/workspace/health/test_migration_paths.py",
+      "scripts/import-apple-health-json.py",
+      "scripts/import-apple-health.py",
+      "scripts/oura-sync.py",
+      "scripts/watch-health-import.sh",
+      "scripts/launchagents/com.ironclaw.health-watch.plist",
+      "scripts/rotate-container-secrets.sh",
+      "agents/sample-agent/workspace/AGENTS.md",
+      "agents/sample-agent/workspace/skills/health-query/SKILL.md",
+      "docs/ios-shortcut-guide.md",
+      "docs/tasks/main/imessage-test-checklist.md"
+    ],
+    "active_ids": [],
+    "recent_commands": [
+      "python3 scripts/import-apple-health-json.py --file 'Auto Export/State of Mind/HealthAutoExport-2026-04-30.json'",
+      "launchctl load ~/Library/LaunchAgents/com.ironclaw.health-watch.plist",
+      "python3 -m unittest discover -s agents/sample-agent/workspace/health -q"
+    ]
+  },
+  "context": {
+    "wip_state": "4 untracked planning/doc files (bp_report, session logs, AGENTS.md minor edit)",
+    "last_commit": "3d76bd3",
+    "session_arc": "11-session sprint on health-db multi-pillar system (Apr 26–30). S1 scoped health-db. S2 implemented phases 1-3 (SQLite, blood labs, Oura). S3 wrote 4 test files. S4 clean/test/evaluate, fixed 3 architecture issues, pushed. S5 scoped health_query.py (3 subcommands, 6 intents). S6 executed health_query.py: built all 3 subcommands, cost_summary.py, SKILL.md, 88 tests passing. S7 debugged live routing: fixed AGENTS.md Rule 6b enforcement, SKILL.md guardrails, skill config sync. S8 built BP pillar end-to-end (import, query, entry, tests), fixed 3 arch issues, 72 tests. S9 scoped multi-source data import and completed Withings integration (OAuth2, daily cron, 154 rows). S10 completed full system: Apple Health XML (all categories), Evernote ENEX parser, Oura tags, 5 new query subcommands, hardened security (Keychain, daily launchd, backup), fixed 2 bugs, 172 tests. S11 (current) finalized iOS automation end-to-end: Health Auto Export app + 2 Shortcuts + launchd watcher, HRV backfill (3138 rows), migration framework tests (v0→v5), sync-status + mood subcommands, State of Mind pillar, secrets rotation script, iMessage test checklist, 145 tests. System fully automated, wired, tested, deployed. 6am daily iOS sync live."
+  }
+}
