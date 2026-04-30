@@ -78,7 +78,7 @@ def _ts_str(raw: str) -> str:
     return raw[:19]
 
 
-def parse_metrics(data: dict) -> tuple[list, dict, dict, list]:
+def parse_metrics(data: dict):
     """
     Walk data["metrics"] and bucket records by internal category.
 
@@ -245,7 +245,7 @@ def parse_workouts(data: dict) -> list[dict]:
     return workouts_out
 
 
-def _parse_som_entry(entry: dict) -> dict | None:
+def _parse_som_entry(entry: dict):
     """
     Parse a single state_of_mind entry from Health Auto Export JSON.
 

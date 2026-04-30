@@ -2,7 +2,7 @@
 # Triggered by launchd WatchPaths when iCloud Drive Health folder changes.
 # Scans for new .json files, validates, imports, archives processed files.
 
-WATCH_DIR="$HOME/Library/Mobile Documents/com~apple~CloudDocs/Health"
+WATCH_DIR="$HOME/Library/Mobile Documents/com~apple~CloudDocs/Health DB export"
 ARCHIVE_DIR="$WATCH_DIR/archive"
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 LOG="$HOME/Library/Logs/ironclaw/health-watch.log"
