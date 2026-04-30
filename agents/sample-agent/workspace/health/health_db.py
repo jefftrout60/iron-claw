@@ -51,7 +51,7 @@ def get_connection(db_path: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def initialize_schema(conn: sqlite3.Connection) -> None:
@@ -64,6 +64,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
       1 → 2 : body_metrics
       2 → 3 : activity_daily, workouts
       3 → 4 : workout_exercises, oura_tags
+      4 → 5 : state_of_mind
     """
     _version = conn.execute("PRAGMA user_version").fetchone()[0]
     # ---------- health_knowledge ----------------------------------------
@@ -379,3 +380,79 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         conn.execute("PRAGMA user_version = 4")
         conn.commit()
         _version = 4
+
+    # ---------- v5: state_of_mind ----------------------------------------
+    if _version < 5:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS state_of_mind (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                date         TEXT NOT NULL,
+                logged_at    TEXT,
+                kind         TEXT DEFAULT 'daily_mood',
+                valence      REAL,
+                arousal      REAL,
+                labels       TEXT,
+                associations TEXT,
+                source       TEXT DEFAULT 'apple_health',
+                imported_at  TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_state_of_mind
+            ON state_of_mind(date, kind, logged_at);
+            CREATE INDEX IF NOT EXISTS idx_state_of_mind_date
+            ON state_of_mind(date);
+        """)
+        conn.execute("PRAGMA user_version = 5")
+        conn.commit()
+        _version = 5
+
+
+# ---------------------------------------------------------------------------
+# sync_state helpers
+# ---------------------------------------------------------------------------
+
+def get_last_synced(conn: sqlite3.Connection, resource: str, default: str = None) -> str | None:
+    """Return the last_synced value for a resource, or default if not found."""
+    row = conn.execute(
+        "SELECT last_synced FROM sync_state WHERE resource = ?", (resource,)
+    ).fetchone()
+    return row[0] if row else default
+
+
+def set_last_synced(conn: sqlite3.Connection, resource: str, value: str) -> None:
+    """Upsert the last_synced timestamp for a resource."""
+    conn.execute(
+        "INSERT OR REPLACE INTO sync_state (resource, last_synced) VALUES (?, ?)",
+        (resource, value),
+    )
+    conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# HRV helpers
+# ---------------------------------------------------------------------------
+
+def backfill_daily_hrv(conn: sqlite3.Connection) -> None:
+    """
+    Populate oura_daily.avg_hrv_rmssd from the best sleep session per day.
+
+    Session selection: prefer type = 'long_sleep'; fall back to the session
+    with the longest total_sleep_sec.  Idempotent — re-derives from sessions
+    on each call, safe to run repeatedly.
+    """
+    conn.execute("""
+        UPDATE oura_daily
+        SET avg_hrv_rmssd = (
+            SELECT avg_hrv FROM oura_sleep_sessions
+            WHERE oura_sleep_sessions.day = oura_daily.day
+            ORDER BY
+                CASE WHEN type = 'long_sleep' THEN 0 ELSE 1 END,
+                total_sleep_sec DESC
+            LIMIT 1
+        )
+        WHERE EXISTS (
+            SELECT 1 FROM oura_sleep_sessions
+            WHERE oura_sleep_sessions.day = oura_daily.day
+              AND avg_hrv IS NOT NULL
+        )
+    """)
+    conn.commit()
