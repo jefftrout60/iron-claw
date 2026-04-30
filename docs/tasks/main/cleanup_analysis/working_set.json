@@ -1,14 +1,20 @@
 {
   "scope_mode": "commit_range",
-  "commit_range": "090f7c7^..HEAD",
+  "from_commit": "5db2752",
+  "to": "HEAD",
+  "date": "2026-04-29",
   "files": [
-    "agents/sample-agent/workspace/skills/podcast-summary/scripts/health_db.py",
-    "agents/sample-agent/workspace/skills/podcast-summary/scripts/health_store.py",
-    "agents/sample-agent/workspace/skills/podcast-summary/scripts/health_store_cmd.py",
-    "agents/sample-agent/workspace/skills/podcast-summary/scripts/vault.py",
-    "scripts/import-blood-labs.py",
-    "scripts/launchagents/com.ironclaw.oura-sync.plist",
-    "scripts/migrate_health_knowledge.py",
-    "scripts/oura-sync.py"
-  ]
+    "agents/sample-agent/workspace/AGENTS.md",
+    "agents/sample-agent/workspace/health/health_db.py",
+    "agents/sample-agent/workspace/health/health_query.py",
+    "agents/sample-agent/workspace/health/test_health_query.py",
+    "agents/sample-agent/workspace/health/test_withings_sync.py",
+    "agents/sample-agent/workspace/skills/health-query/SKILL.md",
+    "scripts/import-apple-health.py",
+    "scripts/import-evernote-workouts.py",
+    "scripts/oura-sync.py",
+    "scripts/withings-auth.py",
+    "scripts/withings-sync.py"
+  ],
+  "untracked_data_files": ["bp_report_2026-01-01_2026-04-28.html", "export.xml", "workouts.enex"]
 }

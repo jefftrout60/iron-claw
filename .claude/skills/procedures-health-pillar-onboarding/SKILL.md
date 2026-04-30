@@ -9,8 +9,8 @@ user-invocable: false
 **Trigger**: add health pillar, new health data, blood pressure, DEXA, macros, workouts, new oura endpoint, new lab type, health db table, health_query.py subcommand, agents.md health rule, model ignores exec, agent answers from memory
 **Confidence**: high
 **Created**: 2026-04-27
-**Updated**: 2026-04-27
-**Version**: 1
+**Updated**: 2026-04-28
+**Version**: 2
 
 When adding a new personal health data type (blood pressure, DEXA, macros, workouts, etc.), there are four required wiring steps. Skipping any one of them results in the agent either ignoring the data or responding from training data instead of the database.
 
@@ -116,3 +116,64 @@ Ask the agent a trigger phrase for the new data type via iMessage. Check logs to
 **SKILL.md alone is insufficient for personal health data queries.** The model treats SKILL.md as optional guidance for tasks it knows it can't do inline (like podcast transcription). For health topics it has training knowledge about (A1c, blood pressure, HRV), it will skip exec and answer conceptually — unless AGENTS.md makes the fallback responses explicitly forbidden with exact exec paths.
 
 This was confirmed in production: health-query SKILL.md with MANDATORY/FORBIDDEN language was not enough. Adding Rule 6b to AGENTS.md with forbidden response phrases and exact exec commands fixed it.
+
+---
+
+## iMessage Entry Flow (Rule 6c Pattern)
+
+If the data type supports iMessage-based logging (user texts a reading directly), you need a **second** AGENTS.md rule beyond Rule 6b — Rule 6c covers entry, not just querying.
+
+### The Two Failure Modes Are Different
+
+| Rule | Covers | Symptom without it |
+|------|--------|-------------------|
+| 6b | **Queries** ("show me my BP") | Agent answers from training data or says "I don't have that" |
+| 6c | **Entry** ("133/68 55") | Agent asks permission to log AND gives clinical advice |
+
+### What GPT-5-mini Does Wrong on Entry
+
+When a user texts a reading like `133/68 55`, the model by default:
+1. **Asks permission**: "I can log this — want me to?" (Rule 6 violation)
+2. **Gives clinical advice**: "133 is mildly elevated — seek care if you have dizziness..."
+
+SKILL.md Intent instructions do NOT prevent either. Both require Rule 6c in AGENTS.md.
+
+### Rule 6c Template
+
+```markdown
+### Rule 6c: {Data type} entry — ask timing first, log immediately, no advice
+
+When a message contains a {data type} pattern (e.g. "NNN/NN NN" for BP):
+
+**STEP 1** — Ask ONE question: "Is this reading from right now, or a past date?"
+**STEP 2** — After reply: y/now/yes → current timestamp; date string → parse it
+**STEP 3** — Log via exec:
+exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py {log-subcommand} --field1 {v} --date {YYYY-MM-DD} --time {HH:MM}
+**STEP 4** — Confirm only: "Logged — {values} on {date} at {time}."
+
+**FORBIDDEN:**
+- "Say 'log' to save this reading" — DO NOT ask permission
+- Any clinical interpretation, normal/elevated commentary, or medical advice
+- "Seek care", symptom warnings of any kind
+```
+
+### health_query.py log Subcommand Pattern
+
+Add a `{data}-log` subcommand alongside the `{data}` query subcommand:
+
+```python
+lg = sub.add_parser("{data}-log")
+lg.add_argument("--field1", type=int, required=True)
+lg.add_argument("--date", dest="reading_date", required=True)
+lg.add_argument("--time", dest="reading_time", required=True)
+# ... other fields
+```
+
+Use `source='imessage'` and `ON CONFLICT(...) DO UPDATE` for safe re-entry.
+
+### Generalizes to All iMessage-Logged Metrics
+
+Every future iMessage-based entry type (weight, macros, blood glucose, etc.) needs:
+1. A `{data}-log` subcommand in `health_query.py`
+2. An entry intent in `health-query/SKILL.md` (separate from the query intent)
+3. A Rule 6c block in `AGENTS.md` with data-specific forbidden phrases
