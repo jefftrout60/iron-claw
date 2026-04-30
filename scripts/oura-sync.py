@@ -259,6 +259,8 @@ def sync_sleep_sessions(conn, headers: dict, start: str, end: str) -> None:
 
     conn.commit()
     log.info("Upserted %d sleep session rows", count)
+    health_db.backfill_daily_hrv(conn)
+    log.info("Refreshed avg_hrv_rmssd from sleep sessions")
     health_db.set_last_synced(conn, "sleep", end)
 
 
