@@ -14,7 +14,7 @@
 
     <key>WatchPaths</key>
     <array>
-        <string>/Users/jeff/Library/Mobile Documents/com~apple~CloudDocs/Health DB export</string>
+        <string>/Users/jeff/Library/Mobile Documents/com~apple~CloudDocs/Auto Export</string>
     </array>
 
     <key>RunAtLoad</key>

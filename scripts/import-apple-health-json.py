@@ -354,6 +354,37 @@ def _parse_som_entry(entry: dict):
     }
 
 
+def _parse_state_of_mind_direct(entries: list) -> list:
+    """
+    Parse data.stateOfMind entries from the State of Mind automation export.
+
+    Actual confirmed field names (from real export 2026-04-30):
+      start, end, kind, valence, labels (list), associations (list), id
+    No arousal field in Apple's export.
+    """
+    results = []
+    for entry in entries:
+        start = entry.get("start", "")
+        if not start:
+            continue
+        date_str = start[:10]
+        logged_at = start[:19].replace("T", " ")
+        kind = entry.get("kind", "daily_mood")
+        valence = entry.get("valence")
+        labels = entry.get("labels", [])
+        associations = entry.get("associations", [])
+        results.append({
+            "date": date_str,
+            "logged_at": logged_at,
+            "kind": kind,
+            "valence": float(valence) if valence is not None else None,
+            "arousal": None,
+            "labels": json.dumps(labels if isinstance(labels, list) else []),
+            "associations": json.dumps(associations if isinstance(associations, list) else []),
+        })
+    return results
+
+
 # ---------------------------------------------------------------------------
 # DB write functions
 # ---------------------------------------------------------------------------
@@ -457,19 +488,16 @@ def import_workouts(conn, workouts: list) -> None:
     print(f"Workouts: imported {inserted}, skipped {skipped} (already present and unchanged)")
 
 
-def import_state_of_mind(conn, som_raw: list) -> None:
+def import_state_of_mind(conn, records: list) -> None:
     """
-    Parse and upsert state_of_mind entries.
-
-    Conflict key is (date, kind, logged_at). Only overwrites rows previously
-    imported from health_auto_export — manual entries are preserved.
+    Upsert pre-parsed state_of_mind records (list of dicts with date, logged_at,
+    kind, valence, arousal, labels, associations keys).
     """
     inserted = 0
     skipped = 0
     unparseable = 0
 
-    for entry in som_raw:
-        rec = _parse_som_entry(entry)
+    for rec in records:
         if rec is None:
             unparseable += 1
             continue
@@ -546,8 +574,14 @@ def main() -> None:
     # Support both {"data": {"metrics": [...], "workouts": [...]}} and flat {"metrics": [...]}
     data = raw.get("data", raw)
 
+    # State of Mind exports use data.stateOfMind (separate automation, separate file)
+    som_direct = _parse_state_of_mind_direct(data.get("stateOfMind", []))
+
     body_records, steps_by_date, daylight_by_date, som_raw = parse_metrics(data)
     workouts = parse_workouts(data)
+
+    # Merge state-of-mind from both paths
+    all_som = som_direct + [r for r in [_parse_som_entry(e) for e in som_raw] if r]
 
     weight_count = sum(1 for r in body_records if r["type"] == "weight_lbs")
     fat_count    = sum(1 for r in body_records if r["type"] == "fat_ratio_pct")
@@ -556,7 +590,7 @@ def main() -> None:
     print(
         f"Parsed: {weight_count} weight, {fat_count} fat%, {lean_count} lean-mass records; "
         f"{len(steps_by_date)} step days, {len(daylight_by_date)} daylight days; "
-        f"{len(workouts)} workouts; {len(som_raw)} state-of-mind entries"
+        f"{len(workouts)} workouts; {len(all_som)} state-of-mind entries"
     )
 
     if args.dry_run:
@@ -567,7 +601,7 @@ def main() -> None:
     import_body_metrics(conn, body_records)
     import_activity(conn, steps_by_date, daylight_by_date)
     import_workouts(conn, workouts)
-    import_state_of_mind(conn, som_raw)
+    import_state_of_mind(conn, all_som)
     health_db.set_last_synced(conn, "apple_health_json", date.today().isoformat())
     conn.close()
     print("Import complete.")
