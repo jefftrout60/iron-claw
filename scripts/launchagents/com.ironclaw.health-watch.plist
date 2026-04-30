@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Install: launchctl load ~/Library/LaunchAgents/com.ironclaw.health-watch.plist -->
+<!-- Install: cp scripts/launchagents/com.ironclaw.health-watch.plist ~/Library/LaunchAgents/
+     Load:    launchctl load ~/Library/LaunchAgents/com.ironclaw.health-watch.plist
+     Unload:  launchctl unload ~/Library/LaunchAgents/com.ironclaw.health-watch.plist -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -12,10 +14,10 @@
         <string>/Users/jeff/ironclaw/scripts/watch-health-import.sh</string>
     </array>
 
-    <key>WatchPaths</key>
-    <array>
-        <string>/Users/jeff/Library/Mobile Documents/com~apple~CloudDocs/Auto Export</string>
-    </array>
+    <!-- Poll every 5 minutes. More reliable than WatchPaths on iCloud Drive
+         (a network-backed filesystem where WatchPaths is documented as flaky). -->
+    <key>StartInterval</key>
+    <integer>300</integer>
 
     <key>RunAtLoad</key>
     <false/>

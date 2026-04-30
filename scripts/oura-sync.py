@@ -42,6 +42,10 @@ OURA_BASE = "https://api.ouraring.com/v2/usercollection"
 HISTORICAL_START = "2015-01-01"
 DEFAULT_START = "2024-01-01"
 
+# Re-fetch the last N days on every incremental sync so rate-limit gaps
+# and retroactive Oura corrections are healed automatically.
+OVERLAP_DAYS = 1
+
 
 # ---------------------------------------------------------------------------
 # .env / token loading
@@ -224,7 +228,8 @@ def sync_daily_summaries(conn, headers: dict, start: str, end: str) -> None:
         )
     conn.commit()
     log.info("Upserted %d daily summary rows", len(daily))
-    health_db.set_last_synced(conn, "daily_summaries", end)
+    health_db.set_last_synced(conn, "daily_summaries",
+                              (date.fromisoformat(end) - timedelta(days=OVERLAP_DAYS)).isoformat())
 
 
 def sync_sleep_sessions(conn, headers: dict, start: str, end: str) -> None:
@@ -261,7 +266,8 @@ def sync_sleep_sessions(conn, headers: dict, start: str, end: str) -> None:
     log.info("Upserted %d sleep session rows", count)
     health_db.backfill_daily_hrv(conn)
     log.info("Refreshed avg_hrv_rmssd from sleep sessions")
-    health_db.set_last_synced(conn, "sleep", end)
+    health_db.set_last_synced(conn, "sleep",
+                              (date.fromisoformat(end) - timedelta(days=OVERLAP_DAYS)).isoformat())
 
 
 def sync_heartrate(conn, headers: dict, start: str, end: str) -> None:
@@ -282,7 +288,8 @@ def sync_heartrate(conn, headers: dict, start: str, end: str) -> None:
 
     conn.commit()
     log.info("Upserted %d heart rate rows", count)
-    health_db.set_last_synced(conn, "heartrate", end)
+    health_db.set_last_synced(conn, "heartrate",
+                              (date.fromisoformat(end) - timedelta(days=OVERLAP_DAYS)).isoformat())
 
 
 def sync_tags(conn, headers: dict, start: str, end: str) -> None:
@@ -308,7 +315,8 @@ def sync_tags(conn, headers: dict, start: str, end: str) -> None:
 
     conn.commit()
     log.info("Upserted %d tag rows", count)
-    health_db.set_last_synced(conn, "oura_tags", end)
+    health_db.set_last_synced(conn, "oura_tags",
+                              (date.fromisoformat(end) - timedelta(days=OVERLAP_DAYS)).isoformat())
 
 
 # ---------------------------------------------------------------------------
