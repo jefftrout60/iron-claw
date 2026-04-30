@@ -8,8 +8,9 @@ Registers app at developer.withings.com first:
 Usage:
   python3 scripts/withings-auth.py
 
-Reads WITHINGS_CLIENT_ID and WITHINGS_CLIENT_SECRET from agents/sample-agent/.env.
-Writes WITHINGS_ACCESS_TOKEN, WITHINGS_REFRESH_TOKEN, WITHINGS_TOKEN_EXPIRY back to .env.
+Reads WITHINGS_CLIENT_ID and WITHINGS_CLIENT_SECRET from Keychain
+(com.ironclaw.withings / client_id + client_secret), falling back to .env.
+Writes access_token, refresh_token, token_expiry to Keychain.
 """
 
 from __future__ import annotations
@@ -27,6 +28,8 @@ import requests
 
 _REPO_ROOT = Path(__file__).parent.parent
 _ENV_PATH = _REPO_ROOT / "agents/sample-agent/.env"
+sys.path.insert(0, str(Path(__file__).parent))
+from keychain import kc_get, kc_set
 
 AUTH_URL = "https://account.withings.com/oauth2_user/authorize2"
 TOKEN_URL = "https://wbsapi.withings.net/v2/oauth2"
@@ -146,12 +149,12 @@ def exchange_code(client_id: str, client_secret: str, code: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    env = load_env()
-    client_id = env.get("WITHINGS_CLIENT_ID", "")
-    client_secret = env.get("WITHINGS_CLIENT_SECRET", "")
+    # Prefer Keychain; fall back to .env for initial setup before migration
+    client_id = kc_get("com.ironclaw.withings", "client_id") or load_env().get("WITHINGS_CLIENT_ID", "")
+    client_secret = kc_get("com.ironclaw.withings", "client_secret") or load_env().get("WITHINGS_CLIENT_SECRET", "")
 
     if not client_id or not client_secret:
-        print("Error: WITHINGS_CLIENT_ID and WITHINGS_CLIENT_SECRET must be set in agents/sample-agent/.env",
+        print("Error: WITHINGS_CLIENT_ID and WITHINGS_CLIENT_SECRET not found in Keychain or .env",
               file=sys.stderr)
         sys.exit(1)
 
@@ -198,13 +201,11 @@ def main() -> None:
     expires_in = int(body.get("expires_in", 10800))
     token_expiry = int(time.time()) + expires_in
 
-    update_env({
-        "WITHINGS_ACCESS_TOKEN": access_token,
-        "WITHINGS_REFRESH_TOKEN": refresh_token,
-        "WITHINGS_TOKEN_EXPIRY": str(token_expiry),
-    })
+    kc_set("com.ironclaw.withings", "access_token", access_token)
+    kc_set("com.ironclaw.withings", "refresh_token", refresh_token)
+    kc_set("com.ironclaw.withings", "token_expiry", str(token_expiry))
 
-    print(f"Tokens written to {_ENV_PATH}")
+    print("Tokens written to Keychain (com.ironclaw.withings)")
     print(f"Access token expires in {expires_in // 3600}h ({expires_in // 60}min)")
     print("Setup complete. You can now run: python3 scripts/withings-sync.py --historical")
 

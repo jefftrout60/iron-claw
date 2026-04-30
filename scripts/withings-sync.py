@@ -31,9 +31,11 @@ import requests
 
 _REPO_ROOT = Path(__file__).parent.parent
 _HEALTH_DIR = _REPO_ROOT / "agents/sample-agent/workspace/health"
-_ENV_PATH = _REPO_ROOT / "agents/sample-agent/.env"
+_SCRIPTS_DIR = _REPO_ROOT / "scripts"
 sys.path.insert(0, str(_HEALTH_DIR))
+sys.path.insert(0, str(_SCRIPTS_DIR))
 import health_db
+from keychain import kc_get, kc_set, kc_require
 
 logging.basicConfig(
     level=logging.INFO,
@@ -59,69 +61,26 @@ MEASTYPE_LIST = f"{MTYPE_WEIGHT},{MTYPE_LEAN_MASS},{MTYPE_FAT_RATIO},{MTYPE_FAT_
 
 
 # ---------------------------------------------------------------------------
-# .env helpers
+# Auth / token management (Keychain)
 # ---------------------------------------------------------------------------
 
-def _read_env() -> dict[str, str]:
-    env: dict[str, str] = {}
-    if not _ENV_PATH.exists():
-        return env
-    for line in _ENV_PATH.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" in line:
-            key, _, val = line.partition("=")
-            env[key.strip()] = val.strip().strip('"').strip("'")
-    return env
+_KC = "com.ironclaw.withings"
 
-
-def _write_env_keys(updates: dict[str, str]) -> None:
-    """Overwrite specific keys in .env without touching other lines."""
-    lines = _ENV_PATH.read_text().splitlines() if _ENV_PATH.exists() else []
-    written: set[str] = set()
-    new_lines = []
-    for line in lines:
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            new_lines.append(line)
-            continue
-        key = stripped.partition("=")[0].strip()
-        if key in updates:
-            new_lines.append(f"{key}={updates[key]}")
-            written.add(key)
-        else:
-            new_lines.append(line)
-    for key, val in updates.items():
-        if key not in written:
-            new_lines.append(f"{key}={val}")
-    _ENV_PATH.write_text("\n".join(new_lines) + "\n")
-
-
-# ---------------------------------------------------------------------------
-# Auth / token management
-# ---------------------------------------------------------------------------
 
 def load_credentials() -> dict[str, str]:
-    """Load all Withings credentials from environment or .env file."""
-    env = _read_env()
-    required = ["WITHINGS_CLIENT_ID", "WITHINGS_CLIENT_SECRET",
-                "WITHINGS_ACCESS_TOKEN", "WITHINGS_REFRESH_TOKEN",
-                "WITHINGS_TOKEN_EXPIRY"]
-    creds: dict[str, str] = {}
-    for key in required:
-        val = os.environ.get(key) or env.get(key, "")
-        if not val:
-            print(f"Error: {key} not found. Run scripts/withings-auth.py first.",
-                  file=sys.stderr)
-            sys.exit(1)
-        creds[key] = val
-    return creds
+    """Load Withings credentials from Keychain."""
+    return {
+        "client_id":     kc_require(_KC, "client_id",     "run scripts/withings-auth.py"),
+        "client_secret": kc_require(_KC, "client_secret",  "run scripts/withings-auth.py"),
+        "access_token":  kc_require(_KC, "access_token",   "run scripts/withings-auth.py"),
+        "refresh_token": kc_require(_KC, "refresh_token",  "run scripts/withings-auth.py"),
+        "token_expiry":  kc_require(_KC, "token_expiry",   "run scripts/withings-auth.py"),
+    }
 
 
 def refresh_if_needed(creds: dict[str, str]) -> dict[str, str]:
     """Refresh access token if it expires within the next 5 minutes."""
-    expiry = int(creds.get("WITHINGS_TOKEN_EXPIRY", "0"))
+    expiry = int(creds.get("token_expiry", "0"))
     if time.time() < expiry - 300:
         return creds  # still fresh
 
@@ -130,9 +89,9 @@ def refresh_if_needed(creds: dict[str, str]) -> dict[str, str]:
         resp = requests.post(TOKEN_URL, data={
             "action": "requesttoken",
             "grant_type": "refresh_token",
-            "client_id": creds["WITHINGS_CLIENT_ID"],
-            "client_secret": creds["WITHINGS_CLIENT_SECRET"],
-            "refresh_token": creds["WITHINGS_REFRESH_TOKEN"],
+            "client_id": creds["client_id"],
+            "client_secret": creds["client_secret"],
+            "refresh_token": creds["refresh_token"],
         }, timeout=30)
         resp.raise_for_status()
         payload = resp.json()
@@ -146,13 +105,12 @@ def refresh_if_needed(creds: dict[str, str]) -> dict[str, str]:
 
     body = payload["body"]
     new_expiry = int(time.time()) + int(body.get("expires_in", 10800))
-    updates = {
-        "WITHINGS_ACCESS_TOKEN": body["access_token"],
-        "WITHINGS_REFRESH_TOKEN": body["refresh_token"],
-        "WITHINGS_TOKEN_EXPIRY": str(new_expiry),
-    }
-    _write_env_keys(updates)
-    creds.update(updates)
+    kc_set(_KC, "access_token",  body["access_token"])
+    kc_set(_KC, "refresh_token", body["refresh_token"])
+    kc_set(_KC, "token_expiry",  str(new_expiry))
+    creds.update({"access_token": body["access_token"],
+                  "refresh_token": body["refresh_token"],
+                  "token_expiry": str(new_expiry)})
     log.info("Token refreshed; new expiry in %dh", int(body.get("expires_in", 10800)) // 3600)
     return creds
 
@@ -328,7 +286,7 @@ def main() -> None:
 
     creds = load_credentials()
     creds = refresh_if_needed(creds)
-    access_token = creds["WITHINGS_ACCESS_TOKEN"]
+    access_token = creds["access_token"]
     today = date.today().isoformat()
 
     conn = health_db.get_connection()

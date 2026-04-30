@@ -27,7 +27,9 @@ import requests
 _REPO_ROOT = Path(__file__).parent.parent
 _HEALTH_DIR = _REPO_ROOT / "agents/sample-agent/workspace/health"
 sys.path.insert(0, str(_HEALTH_DIR))
+sys.path.insert(0, str(_REPO_ROOT / "scripts"))
 import health_db
+from keychain import kc_get
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,12 +48,18 @@ DEFAULT_START = "2024-01-01"
 # ---------------------------------------------------------------------------
 
 def load_token() -> str:
-    """Load OURA_PERSONAL_ACCESS_TOKEN from environment or .env file."""
+    """Load Oura PAT from Keychain, falling back to environment/.env."""
+    # Keychain (preferred)
+    token = kc_get("com.ironclaw.oura", "access_token")
+    if token:
+        return token
+
+    # Environment variable fallback
     token = os.environ.get("OURA_PERSONAL_ACCESS_TOKEN", "")
     if token:
         return token
 
-    # Walk up from repo root looking for agents/sample-agent/.env
+    # .env fallback (pre-migration)
     env_path = _REPO_ROOT / "agents/sample-agent/.env"
     if env_path.exists():
         for line in env_path.read_text().splitlines():
@@ -63,7 +71,7 @@ def load_token() -> str:
                 if key.strip() == "OURA_PERSONAL_ACCESS_TOKEN":
                     return val.strip().strip('"').strip("'")
 
-    print("Error: OURA_PERSONAL_ACCESS_TOKEN not found in environment or agents/sample-agent/.env",
+    print("Error: Oura token not found in Keychain or .env — run scripts/migrate-secrets-to-keychain.py",
           file=sys.stderr)
     sys.exit(1)
 
