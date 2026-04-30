@@ -226,5 +226,182 @@ class TestSyncHelpersAvailable(unittest.TestCase):
         self.assertEqual(result, "2026-04-30T00:00:00Z")
 
 
+class TestBackfillDailyHRV(unittest.TestCase):
+    """
+    Behavioral tests for health_db.backfill_daily_hrv.
+
+    Session selection rules:
+      1. Prefer type='long_sleep' over any other type.
+      2. Among sessions of equal priority, pick the one with the greatest
+         total_sleep_sec.
+      3. Skip sessions where avg_hrv IS NULL (both in ORDER and the EXISTS guard).
+    """
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _make_conn(self) -> sqlite3.Connection:
+        """Return a fresh in-memory DB with the full v5 schema."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        health_db.initialize_schema(conn)
+        return conn
+
+    def _insert_daily(self, conn, id_, day, avg_hrv_rmssd=None):
+        """Insert a minimal oura_daily row."""
+        conn.execute(
+            "INSERT INTO oura_daily (id, day, avg_hrv_rmssd) VALUES (?, ?, ?)",
+            (id_, day, avg_hrv_rmssd),
+        )
+        conn.commit()
+
+    def _insert_session(self, conn, id_, day, type_, avg_hrv, total_sleep_sec=28800):
+        """Insert a minimal oura_sleep_sessions row (NOT NULL cols filled with stubs)."""
+        conn.execute(
+            """INSERT INTO oura_sleep_sessions
+               (id, day, type, bedtime_start, bedtime_end, avg_hrv, total_sleep_sec)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                id_,
+                day,
+                type_,
+                f"{day}T22:00:00",   # bedtime_start NOT NULL
+                f"{day}T06:00:00",   # bedtime_end NOT NULL
+                avg_hrv,
+                total_sleep_sec,
+            ),
+        )
+        conn.commit()
+
+    def _get_hrv(self, conn, day):
+        """Fetch avg_hrv_rmssd for a given day."""
+        row = conn.execute(
+            "SELECT avg_hrv_rmssd FROM oura_daily WHERE day = ?", (day,)
+        ).fetchone()
+        if row is None:
+            return None
+        return row["avg_hrv_rmssd"]
+
+    # ------------------------------------------------------------------
+    # Test 1: basic backfill
+    # ------------------------------------------------------------------
+
+    def test_basic_backfill_writes_hrv(self):
+        """A NULL avg_hrv_rmssd is populated from a matching sleep session."""
+        conn = self._make_conn()
+        self._insert_daily(conn, "d1", "2026-04-01", avg_hrv_rmssd=None)
+        self._insert_session(conn, "s1", "2026-04-01", "long_sleep", avg_hrv=45.0)
+
+        health_db.backfill_daily_hrv(conn)
+
+        self.assertAlmostEqual(self._get_hrv(conn, "2026-04-01"), 45.0)
+
+    # ------------------------------------------------------------------
+    # Test 2: long_sleep wins over longer nap
+    # ------------------------------------------------------------------
+
+    def test_prefers_long_sleep_over_longer_nap(self):
+        """long_sleep session wins even when a nap has more total_sleep_sec."""
+        conn = self._make_conn()
+        self._insert_daily(conn, "d1", "2026-04-02")
+        # nap is longer in duration but should lose to long_sleep
+        self._insert_session(conn, "s_nap",  "2026-04-02", "nap",        avg_hrv=30.0, total_sleep_sec=30000)
+        self._insert_session(conn, "s_long", "2026-04-02", "long_sleep", avg_hrv=50.0, total_sleep_sec=25000)
+
+        health_db.backfill_daily_hrv(conn)
+
+        self.assertAlmostEqual(self._get_hrv(conn, "2026-04-02"), 50.0,
+                               msg="long_sleep HRV should win over longer nap HRV")
+
+    # ------------------------------------------------------------------
+    # Test 3: longest session wins when no long_sleep
+    # ------------------------------------------------------------------
+
+    def test_falls_back_to_longest_session_when_no_long_sleep(self):
+        """When no long_sleep exists, the session with greatest total_sleep_sec wins."""
+        conn = self._make_conn()
+        self._insert_daily(conn, "d1", "2026-04-03")
+        self._insert_session(conn, "s_short", "2026-04-03", "nap", avg_hrv=20.0, total_sleep_sec=3600)
+        self._insert_session(conn, "s_long",  "2026-04-03", "nap", avg_hrv=55.0, total_sleep_sec=7200)
+
+        health_db.backfill_daily_hrv(conn)
+
+        self.assertAlmostEqual(self._get_hrv(conn, "2026-04-03"), 55.0,
+                               msg="Longer nap's HRV should win when no long_sleep exists")
+
+    # ------------------------------------------------------------------
+    # Test 4: NULL avg_hrv in best-candidate session skips to next
+    # ------------------------------------------------------------------
+
+    def test_null_hrv_in_best_session_falls_through_to_next(self):
+        """long_sleep with NULL avg_hrv is skipped; nap's non-NULL HRV is used."""
+        conn = self._make_conn()
+        self._insert_daily(conn, "d1", "2026-04-04")
+        # long_sleep but no HRV recorded → must be ignored
+        self._insert_session(conn, "s_long", "2026-04-04", "long_sleep", avg_hrv=None,  total_sleep_sec=28800)
+        self._insert_session(conn, "s_nap",  "2026-04-04", "nap",        avg_hrv=40.0, total_sleep_sec=3600)
+
+        health_db.backfill_daily_hrv(conn)
+
+        self.assertAlmostEqual(self._get_hrv(conn, "2026-04-04"), 40.0,
+                               msg="Nap HRV should be used when long_sleep has NULL avg_hrv")
+
+    # ------------------------------------------------------------------
+    # Test 5: idempotent — calling twice gives same result
+    # ------------------------------------------------------------------
+
+    def test_idempotent(self):
+        """Calling backfill_daily_hrv twice produces the same result as once."""
+        conn = self._make_conn()
+        self._insert_daily(conn, "d1", "2026-04-05")
+        self._insert_session(conn, "s1", "2026-04-05", "long_sleep", avg_hrv=62.0)
+
+        health_db.backfill_daily_hrv(conn)
+        hrv_first = self._get_hrv(conn, "2026-04-05")
+
+        health_db.backfill_daily_hrv(conn)
+        hrv_second = self._get_hrv(conn, "2026-04-05")
+
+        self.assertAlmostEqual(hrv_first, hrv_second,
+                               msg="backfill_daily_hrv must be idempotent")
+
+    # ------------------------------------------------------------------
+    # Test 6: sleep session with no matching oura_daily row causes no error
+    # ------------------------------------------------------------------
+
+    def test_orphan_session_no_daily_row_no_error(self):
+        """A sleep session whose day has no oura_daily row must not raise."""
+        conn = self._make_conn()
+        # No oura_daily row inserted for this day
+        self._insert_session(conn, "s_orphan", "2026-04-06", "long_sleep", avg_hrv=55.0)
+
+        try:
+            health_db.backfill_daily_hrv(conn)
+        except Exception as exc:
+            self.fail(f"backfill_daily_hrv raised unexpectedly: {exc}")
+
+        # Confirm no daily row was created as a side-effect
+        row = conn.execute(
+            "SELECT 1 FROM oura_daily WHERE day = '2026-04-06'"
+        ).fetchone()
+        self.assertIsNone(row, "No oura_daily row should be created for an orphan session")
+
+    # ------------------------------------------------------------------
+    # Test 7: oura_daily row with no sessions stays NULL
+    # ------------------------------------------------------------------
+
+    def test_no_matching_session_leaves_hrv_null(self):
+        """An oura_daily row with no sleep sessions keeps avg_hrv_rmssd = NULL."""
+        conn = self._make_conn()
+        self._insert_daily(conn, "d1", "2026-04-07", avg_hrv_rmssd=None)
+        # No sessions for this day
+
+        health_db.backfill_daily_hrv(conn)
+
+        self.assertIsNone(self._get_hrv(conn, "2026-04-07"),
+                          "avg_hrv_rmssd should remain NULL when no sessions exist for the day")
+
+
 if __name__ == "__main__":
     unittest.main()
