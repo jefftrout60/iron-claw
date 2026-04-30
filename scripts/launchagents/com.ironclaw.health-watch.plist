@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Install: launchctl load ~/Library/LaunchAgents/com.ironclaw.health-watch.plist -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ironclaw.health-watch</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/jeff/ironclaw/scripts/watch-health-import.sh</string>
+    </array>
+
+    <key>WatchPaths</key>
+    <array>
+        <string>/Users/jeff/Library/Mobile Documents/com~apple~CloudDocs/Health</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/jeff/Library/Logs/ironclaw/health-watch.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/jeff/Library/Logs/ironclaw/health-watch.log</string>
+</dict>
+</plist>

@@ -16,7 +16,7 @@ metadata:
 
 - **FORBIDDEN: memory_search for lab results or Oura data.** Lab results and Oura metrics are stored in health.db — they do NOT exist in memory. `memory_search` will always return nothing for these queries. Use exec ONLY.
 - **FORBIDDEN: answering health data questions without running exec first.** You do not know the user's lab values or Oura scores. You MUST exec health_query.py to retrieve them.
-- **MANDATORY: exec health_query.py for every Intent 1, 2, 8, 9, 10, 11, 12, and 13 query**, no exceptions.
+- **MANDATORY: exec health_query.py for every Intent 1, 2, 8, 9, 10, 11, 12, 13, 14, and 15 query**, no exceptions.
 
 ## Intent Classification
 
@@ -37,6 +37,8 @@ Read the user's message and identify which intent applies:
 | 11 — Workouts | "my workouts", "did I exercise", "gym this week", "workout summary", "training" | exec workouts, synthesize |
 | 12 — Workout exercises | "what did I do at the gym", "my exercises", "sets and reps", "strength training detail", "what exercises" | exec workout-exercises, synthesize |
 | 13 — Tags | "my sauna days", "Oura tags", "tag trends", "sauna this month", "alcohol tags", "when did I" | exec tags, synthesize |
+| 14 — SyncStatus | "up to date", "last sync", "data fresh", "sync status", "when did I sync" | exec sync-status, synthesize |
+| 15 — Mood | "mood", "how am I feeling", "state of mind", "emotional state", "mental" | exec mood, synthesize |
 
 ---
 
@@ -497,6 +499,56 @@ Parse the JSON output and reply in natural language. Include:
 **Hard rules: NEVER reply with raw JSON. NEVER mention script paths. NEVER provide medical advice.**
 
 **If exec returns an error or no data:** "I don't have any tag data in that window."
+
+---
+
+## Intent 14 — SyncStatus
+
+**Trigger:** User asks whether their data is up to date, when the last sync happened, or whether health data is fresh. Phrases like "up to date", "last sync", "data fresh", "sync status", "when did I sync".
+
+**Mandatory-stop cap: 2 steps. Do not add steps.**
+
+### STEP 1 — Query sync status (exec, mandatory)
+
+```
+exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py sync-status
+```
+
+### STEP 2 — Synthesize and reply (reply, mandatory)
+
+Parse the JSON output and reply in natural language. Include:
+- Which data sources have synced and when (date and time for each)
+- Any source that appears stale or has not synced recently
+- One-line overall assessment: "Everything looks current" or call out what's behind
+
+**Hard rules:**
+- If exec fails or returns error: "I wasn't able to check the sync status right now — try again in a moment."
+- NEVER reply with raw JSON. NEVER mention script names, exec, or file paths.
+
+---
+
+## Intent 15 — Mood
+
+**Trigger:** User asks about their mood, emotional state, state of mind, or mental wellbeing. Phrases like "mood", "how am I feeling", "state of mind", "emotional state", "mental", "stress".
+
+**Mandatory-stop cap: 2 steps. Do not add steps.**
+
+### STEP 1 — Query mood data (exec, mandatory)
+
+```
+exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py mood
+```
+
+### STEP 2 — Synthesize and reply (reply, mandatory)
+
+Parse the JSON output and reply in natural language. Include:
+- Recent mood or emotional state readings with dates
+- Any notable trends (improving, declining, stable)
+- Brief narrative on what the data reflects
+
+**Hard rules:**
+- If exec fails or returns error: "I don't have mood data available right now — the data may not have synced yet."
+- NEVER reply with raw JSON. NEVER mention script names, exec, or file paths.
 
 ---
 

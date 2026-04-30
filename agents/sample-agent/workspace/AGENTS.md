@@ -92,6 +92,8 @@ exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py {subcomm
 | Workouts / gym sessions | `workouts --days 30` |
 | Exercise detail / sets / reps | `workout-exercises --days 7` |
 | Sauna / Oura tags | `tags --days 30` |
+| Sync status / data freshness ("up to date", "last sync", "data fresh", "when did I sync", "sync status") | `sync-status` |
+| Mood / state of mind ("mood", "how am I feeling", "state of mind", "emotional", "mental", "stress") | `mood` |
 
 See `health-query` SKILL.md for trigger phrases and example arg overrides. If exec returns `{"error": "..."}`, report it plainly — do NOT say you don't have access.
 
@@ -216,12 +218,13 @@ Examples: `curl -s "wttr.in/Rome?format=3"`, `curl -s "wttr.in/Tokyo?format=3"`.
 
 
 
+
 ## Quality coaching (internal)
 
 Lessons learned from run feedback. Apply these in future runs. OpenClaw injects this section into your context every turn.
 
-- Improve efficiency: shorten run time and cut tool calls (batch writes, avoid redundant reads); consider a lighter/faster model for non-cr...
 - Reduce response time by cutting tool fan-out and prompt rounds.
+- Improve efficiency: shorten run time and cut tool calls (batch writes, avoid redundant reads); consider a lighter/faster model for non-cr...
 - Improve efficiency—reduce runtime and redundant tool calls (batch writes or cache memory reads).
 - Trim latency: batch or remove unnecessary tool calls and reduce runtime to improve efficiency.
 - Reduce runtime and tool calls: batch exec/process calls, avoid redundant reads, and trim prompt/tool rounds to improve efficiency.
