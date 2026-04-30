@@ -308,7 +308,7 @@ def sync_tags(conn, headers: dict, start: str, end: str) -> None:
 
     conn.commit()
     log.info("Upserted %d tag rows", count)
-    health_db.set_last_synced(conn, "tags", end)
+    health_db.set_last_synced(conn, "oura_tags", end)
 
 
 # ---------------------------------------------------------------------------
