@@ -115,25 +115,6 @@ def refresh_if_needed(creds: dict[str, str]) -> dict[str, str]:
     return creds
 
 
-# ---------------------------------------------------------------------------
-# sync_state helpers (mirrors oura-sync.py exactly)
-# ---------------------------------------------------------------------------
-
-def get_last_synced(conn, resource: str, default: str) -> str:
-    row = conn.execute(
-        "SELECT last_synced FROM sync_state WHERE resource = ?", (resource,)
-    ).fetchone()
-    return row[0] if row else default
-
-
-def set_last_synced(conn, resource: str, last_synced: str) -> None:
-    conn.execute(
-        "INSERT OR REPLACE INTO sync_state (resource, last_synced) VALUES (?, ?)",
-        (resource, last_synced),
-    )
-    conn.commit()
-
-
 def date_chunks(start: str, end: str, days: int = 90) -> list[tuple[str, str]]:
     """Split a date range into chunks of `days` days."""
     chunks = []
@@ -268,7 +249,7 @@ def sync_body_metrics(conn, access_token: str, start: str, end: str) -> None:
         log.info("Chunk %s → %s: %d groups fetched", chunk_start, chunk_end, len(groups))
 
     log.info("Body metrics: %d inserted/updated, %d skipped (unchanged)", inserted, skipped)
-    set_last_synced(conn, "withings_body", end)
+    health_db.set_last_synced(conn, "withings_body", end)
 
 
 # ---------------------------------------------------------------------------
@@ -298,7 +279,7 @@ def main() -> None:
         start = args.since
         log.info("Import from %s (--since)", start)
     else:
-        start = get_last_synced(conn, "withings_body", DEFAULT_START)
+        start = health_db.get_last_synced(conn, "withings_body", DEFAULT_START)
         log.info("Incremental sync from %s (sync_state)", start)
 
     if start >= today:

@@ -133,25 +133,6 @@ def date_chunks(start: str, end: str, days: int = 90) -> list[tuple[str, str]]:
 
 
 # ---------------------------------------------------------------------------
-# sync_state helpers
-# ---------------------------------------------------------------------------
-
-def get_last_synced(conn, resource: str, default: str) -> str:
-    row = conn.execute(
-        "SELECT last_synced FROM sync_state WHERE resource = ?", (resource,)
-    ).fetchone()
-    return row[0] if row else default
-
-
-def set_last_synced(conn, resource: str, last_synced: str) -> None:
-    conn.execute(
-        "INSERT OR REPLACE INTO sync_state (resource, last_synced) VALUES (?, ?)",
-        (resource, last_synced),
-    )
-    conn.commit()
-
-
-# ---------------------------------------------------------------------------
 # Per-endpoint sync functions
 # ---------------------------------------------------------------------------
 
@@ -243,7 +224,7 @@ def sync_daily_summaries(conn, headers: dict, start: str, end: str) -> None:
         )
     conn.commit()
     log.info("Upserted %d daily summary rows", len(daily))
-    set_last_synced(conn, "daily_summaries", end)
+    health_db.set_last_synced(conn, "daily_summaries", end)
 
 
 def sync_sleep_sessions(conn, headers: dict, start: str, end: str) -> None:
@@ -278,7 +259,7 @@ def sync_sleep_sessions(conn, headers: dict, start: str, end: str) -> None:
 
     conn.commit()
     log.info("Upserted %d sleep session rows", count)
-    set_last_synced(conn, "sleep", end)
+    health_db.set_last_synced(conn, "sleep", end)
 
 
 def sync_heartrate(conn, headers: dict, start: str, end: str) -> None:
@@ -299,7 +280,7 @@ def sync_heartrate(conn, headers: dict, start: str, end: str) -> None:
 
     conn.commit()
     log.info("Upserted %d heart rate rows", count)
-    set_last_synced(conn, "heartrate", end)
+    health_db.set_last_synced(conn, "heartrate", end)
 
 
 def sync_tags(conn, headers: dict, start: str, end: str) -> None:
@@ -325,7 +306,7 @@ def sync_tags(conn, headers: dict, start: str, end: str) -> None:
 
     conn.commit()
     log.info("Upserted %d tag rows", count)
-    set_last_synced(conn, "tags", end)
+    health_db.set_last_synced(conn, "tags", end)
 
 
 # ---------------------------------------------------------------------------
@@ -365,7 +346,7 @@ def main() -> None:
         (sync_heartrate, "heartrate"),
         (sync_tags, "tags"),
     ]:
-        resource_start = start or get_last_synced(conn, resource_key, DEFAULT_START)
+        resource_start = start or health_db.get_last_synced(conn, resource_key, DEFAULT_START)
         if resource_start >= today:
             log.info("%s already up to date (%s)", resource_key, resource_start)
             continue

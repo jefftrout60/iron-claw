@@ -295,6 +295,7 @@ def main() -> None:
 
         conn.commit()
 
+    health_db.set_last_synced(conn, "evernote_workouts", date.today().isoformat())
     conn.close()
     print(f"Imported {total_exercises} exercise records from {len(all_rows)} notes")
 
