@@ -279,7 +279,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
 
     # Stamp version 1 for any DB that has the original tables but no version yet
     if _version < 1:
-        conn.execute(f"PRAGMA user_version = 1")
+        conn.execute("PRAGMA user_version = 1")
         conn.commit()
         _version = 1
 

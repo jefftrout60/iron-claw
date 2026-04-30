@@ -148,7 +148,7 @@ def oura_window(days: int, metric: str | None, all_cols: bool) -> dict:
         row_dict.pop("id", None)
         row_dict.pop("contributors_json", None)
         row_dict.pop("fetched_at", None)
-        # Drop null values when all_cols requested (cleaner output)
+        # Drop null values when returning multiple columns (cleaner output)
         if all_cols or not metric:
             row_dict = {k: v for k, v in row_dict.items() if v is not None}
         data.append(row_dict)

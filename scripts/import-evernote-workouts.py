@@ -70,7 +70,7 @@ def parse_enex(filepath: str | Path):
 
         content = note.findtext("content") or ""
         if content:
-            # Pass title twice; _week_monday derives the actual date from title
+            # created is unused (week date is derived from title by _week_monday)
             yield title, date(2025, 1, 1), content
 
 
@@ -121,7 +121,7 @@ def extract_table_rows(content_html: str) -> list[list[str]]:
 
 
 # ---------------------------------------------------------------------------
-# Task 3.4: Exercise text parser
+# Exercise text parser
 # ---------------------------------------------------------------------------
 
 _EXERCISE_RE = re.compile(
@@ -168,7 +168,7 @@ def parse_exercise_text(text: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Task 3.5: Week date derivation helper
+# Week date derivation helper
 # ---------------------------------------------------------------------------
 
 def _week_monday(title: str, created: date) -> date:
@@ -223,7 +223,7 @@ def main() -> None:
         print("Dry run — no DB writes")
         return
 
-    # Task 3.5: link exercises to workouts and write to DB
+    # Link exercises to workout rows and write to DB
     day_offsets = {
         "monday": 0, "tuesday": 1, "wednesday": 2,
         "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6,
