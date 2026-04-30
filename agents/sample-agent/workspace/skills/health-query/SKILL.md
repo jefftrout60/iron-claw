@@ -16,7 +16,7 @@ metadata:
 
 - **FORBIDDEN: memory_search for lab results or Oura data.** Lab results and Oura metrics are stored in health.db — they do NOT exist in memory. `memory_search` will always return nothing for these queries. Use exec ONLY.
 - **FORBIDDEN: answering health data questions without running exec first.** You do not know the user's lab values or Oura scores. You MUST exec health_query.py to retrieve them.
-- **MANDATORY: exec health_query.py for every Intent 1 and Intent 2 query**, no exceptions.
+- **MANDATORY: exec health_query.py for every Intent 1, 2, 8, 9, 10, 11, 12, and 13 query**, no exceptions.
 
 ## Intent Classification
 
@@ -28,15 +28,15 @@ Read the user's message and identify which intent applies:
 | 2 — Oura query | "how's my HRV", "last week's sleep", "readiness score", "Oura", "recovery score", "how did I sleep" | exec oura-window, synthesize |
 | 3 — Knowledge search | "what does Attia say about X", "trusted sources on Y", "what does the research say about Z", "what do my podcast summaries say about X", "what have I learned from podcasts about Y", "what do my summaries say" | exec search, web fallback if thin |
 | 4 — Web contrast | "do a web search on that", "contrast with web", "what does the internet say" | web_search, contrast prior trusted answer |
-| 5 — Weekly summary on-demand | "give me my weekly summary", "weekly health report", "send my health summary" | pipeline: oura-window + cost + email |
+| 5 — Weekly summary on-demand | "give me my weekly summary", "weekly health report", "send my health summary" | pipeline: oura-window + blood-pressure + cost + email |
 | 6 — Set up weekly cron | "set up my weekly summary", "schedule weekly health email", "automate weekly summary" | register Sunday 6 PM cron via cron tool |
 | 7 — BP entry | message matches pattern NNN/NN or NNN/NN NN (a reading, e.g. "133/68 55") | ask now-or-past, then exec bp-log |
 | 8 — BP query | "my blood pressure", "BP readings", "systolic", "diastolic", "BP trend", "blood pressure last N days" | exec blood-pressure, synthesize |
 | 9 — Body metrics | "my weight", "body fat", "lean mass", "fat percentage", "weight trend", "how much do I weigh" | exec body-metrics, synthesize |
 | 10 — Activity | "my steps", "steps this week", "how active", "time outside", "daylight" | exec activity, synthesize |
 | 11 — Workouts | "my workouts", "did I exercise", "gym this week", "workout summary", "training" | exec workouts, synthesize |
-| 12 — Workout exercises | "what did I do at the gym", "my exercises", "sets and reps", "strength training detail" | exec workout-exercises, synthesize |
-| 13 — Tags | "my sauna days", "Oura tags", "tag trends", "sauna this month" | exec tags, synthesize |
+| 12 — Workout exercises | "what did I do at the gym", "my exercises", "sets and reps", "strength training detail", "what exercises" | exec workout-exercises, synthesize |
+| 13 — Tags | "my sauna days", "Oura tags", "tag trends", "sauna this month", "alcohol tags", "when did I" | exec tags, synthesize |
 
 ---
 
@@ -245,6 +245,31 @@ Reply via iMessage: "Weekly summary sent to your email."
 
 ---
 
+## Intent 6 — Set Up Weekly Summary Cron
+
+**Trigger:** User asks to schedule, automate, or set up the weekly health summary email. Phrases like "set up my weekly summary", "schedule weekly health email", "automate my weekly summary".
+
+### STEP 1 — Register the cron task (cron tool, mandatory)
+
+Use the built-in `cron` tool to register a recurring task:
+
+```
+cron: every Sunday at 18:00
+task: Send my weekly health summary to email
+```
+
+The task wording intentionally matches Intent 5 trigger phrases so the cron re-entry correctly routes to the weekly summary pipeline.
+
+This fires the Intent 5 pipeline automatically every Sunday at 6 PM. The cron task runs the full pipeline: Oura data → cost summary → email synthesis → send → iMessage confirmation.
+
+### STEP 2 — Confirm to user (reply, mandatory)
+
+Reply via iMessage: "Done — your weekly health summary is scheduled for every Sunday at 6 PM. The first one will arrive this Sunday (or next Sunday if it's already past 6 PM today)."
+
+**Hard rule: NEVER mention cron tool names, exec calls, or script paths in user-facing replies.**
+
+---
+
 ## Intent 7 — Blood Pressure Entry (logging a new reading)
 
 **Trigger:** User's message matches a blood pressure reading pattern — numbers in NNN/NN or NNN/NN NN format (e.g. "133/68", "133/68 55", "118/78 62").
@@ -312,31 +337,6 @@ Parse the JSON output and reply in natural language. Include:
 **Hard rules: NEVER reply with raw JSON. NEVER mention script paths. NEVER provide medical advice or symptom warnings.**
 
 **If exec returns an error or no data:** "I don't have any blood pressure readings in that window."
-
----
-
-## Intent 6 — Set Up Weekly Summary Cron
-
-**Trigger:** User asks to schedule, automate, or set up the weekly health summary email. Phrases like "set up my weekly summary", "schedule weekly health email", "automate my weekly summary".
-
-### STEP 1 — Register the cron task (cron tool, mandatory)
-
-Use the built-in `cron` tool to register a recurring task:
-
-```
-cron: every Sunday at 18:00
-task: Send my weekly health summary to email
-```
-
-The task wording intentionally matches Intent 5 trigger phrases so the cron re-entry correctly routes to the weekly summary pipeline.
-
-This fires the Intent 5 pipeline automatically every Sunday at 6 PM. The cron task runs the full pipeline: Oura data → cost summary → email synthesis → send → iMessage confirmation.
-
-### STEP 2 — Confirm to user (reply, mandatory)
-
-Reply via iMessage: "Done — your weekly health summary is scheduled for every Sunday at 6 PM. The first one will arrive this Sunday (or next Sunday if it's already past 6 PM today)."
-
-**Hard rule: NEVER mention cron tool names, exec calls, or script paths in user-facing replies.**
 
 ---
 

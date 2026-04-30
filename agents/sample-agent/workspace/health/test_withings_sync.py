@@ -39,14 +39,6 @@ def _make_conn() -> sqlite3.Connection:
     return conn
 
 
-def _insert_body_metric(conn, date_str, time_str, weight_lbs, fat_ratio_pct=None):
-    conn.execute(
-        """INSERT INTO body_metrics (date, time, weight_lbs, fat_ratio_pct, source)
-           VALUES (?, ?, ?, ?, 'withings_api')""",
-        (date_str, time_str, weight_lbs, fat_ratio_pct),
-    )
-    conn.commit()
-
 
 @unittest.skipUnless(_MODULE_AVAILABLE, "withings-sync.py not available or has import error")
 class TestWithingsValueDecode(unittest.TestCase):

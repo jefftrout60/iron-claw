@@ -39,7 +39,6 @@ sys.path.insert(0, str(_HEALTH_DIR))
 import health_db
 
 NOTE_TITLE_RE = re.compile(r"Week \d+ Training Plan", re.IGNORECASE)
-ENEX_DATE_FORMAT = "%Y%m%dT%H%M%SZ"
 
 
 # ---------------------------------------------------------------------------
