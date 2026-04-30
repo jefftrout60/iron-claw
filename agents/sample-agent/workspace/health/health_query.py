@@ -12,6 +12,7 @@ Subcommands (all output JSON to stdout):
   workouts           [--days N] [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--type TYPE]
   workout-exercises  [--date YYYY-MM-DD | --days N]
   tags               [--days N] [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--type TAG]
+  mood               [--since YYYY-MM-DD] [--kind daily_mood|momentary_emotion]
 
 Exit 0 on success, exit 1 with {"error": "..."} JSON on failure.
 """
@@ -556,6 +557,37 @@ def tags_query(days: int, start: str | None, end: str | None,
 
 
 # ---------------------------------------------------------------------------
+# mood
+# ---------------------------------------------------------------------------
+
+def mood_query(since: str | None, kind: str) -> list:
+    conn = health_db.get_connection()
+    cutoff = since if since else (date.today() - timedelta(days=30)).isoformat()
+
+    rows = conn.execute(
+        "SELECT date, kind, valence, arousal, labels, associations"
+        " FROM state_of_mind"
+        " WHERE date >= ? AND kind = ?"
+        " ORDER BY date DESC",
+        (cutoff, kind),
+    ).fetchall()
+
+    result = []
+    for r in rows:
+        labels = json.loads(r["labels"]) if r["labels"] else []
+        associations = json.loads(r["associations"]) if r["associations"] else []
+        result.append({
+            "date": r["date"],
+            "kind": r["kind"],
+            "valence": r["valence"],
+            "arousal": r["arousal"],
+            "labels": labels,
+            "associations": associations,
+        })
+    return result
+
+
+# ---------------------------------------------------------------------------
 # search
 # ---------------------------------------------------------------------------
 
@@ -665,6 +697,12 @@ def main() -> None:
     tg.add_argument("--type", dest="tag_type",
                     help="Case-insensitive substring filter on tag_type")
 
+    md = sub.add_parser("mood", help="State of Mind entries (daily_mood or momentary_emotion)")
+    md.add_argument("--since", help="Start date YYYY-MM-DD (default: 30 days ago)")
+    md.add_argument("--kind", default="daily_mood",
+                    choices=["daily_mood", "momentary_emotion"],
+                    help="Kind of state_of_mind entry (default: daily_mood)")
+
     args = parser.parse_args()
 
     if args.command == "lab-trend":
@@ -688,6 +726,8 @@ def main() -> None:
         result = workout_exercises_query(args.days, args.single_date)
     elif args.command == "tags":
         result = tags_query(args.days, args.start, args.end, args.tag_type)
+    elif args.command == "mood":
+        result = {"mood": mood_query(args.since, args.kind)}
     _out(result)
 
 

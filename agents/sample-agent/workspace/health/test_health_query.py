@@ -682,6 +682,117 @@ class TestTagsQuery(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# mood_query tests
+# ---------------------------------------------------------------------------
+
+class TestMoodQuery(unittest.TestCase):
+    """Tests for health_query.mood_query()."""
+
+    def setUp(self):
+        self.conn = _make_conn()
+        self._original_get_connection = health_db.get_connection
+        health_query.health_db.get_connection = lambda *a, **kw: self.conn
+
+    def tearDown(self):
+        health_db.get_connection = self._original_get_connection
+        self.conn.close()
+
+    def _insert_mood(self, date_str, kind="daily_mood", valence=0.7, arousal=0.5,
+                     labels=None, associations=None):
+        import json as _json
+        self.conn.execute(
+            """INSERT INTO state_of_mind
+               (date, kind, valence, arousal, labels, associations)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (
+                date_str, kind, valence, arousal,
+                _json.dumps(labels) if labels is not None else None,
+                _json.dumps(associations) if associations is not None else None,
+            ),
+        )
+        self.conn.commit()
+
+    def test_empty_table_returns_empty_list_not_error(self):
+        # Must return [] not raise SystemExit
+        result = health_query.mood_query("2026-01-01", "daily_mood")
+        self.assertEqual(result, [])
+
+    def test_returns_list(self):
+        self._insert_mood("2026-04-20")
+        result = health_query.mood_query("2026-04-01", "daily_mood")
+        self.assertIsInstance(result, list)
+
+    def test_row_has_required_keys(self):
+        self._insert_mood("2026-04-20", labels=["calm"], associations=["nature"])
+        result = health_query.mood_query("2026-04-01", "daily_mood")
+        row = result[0]
+        for key in ("date", "kind", "valence", "arousal", "labels", "associations"):
+            self.assertIn(key, row, f"Missing key: {key}")
+
+    def test_labels_parsed_to_list(self):
+        self._insert_mood("2026-04-20", labels=["happy", "energized"])
+        result = health_query.mood_query("2026-04-01", "daily_mood")
+        self.assertIsInstance(result[0]["labels"], list)
+        self.assertEqual(result[0]["labels"], ["happy", "energized"])
+
+    def test_associations_parsed_to_list(self):
+        self._insert_mood("2026-04-20", associations=["work", "exercise"])
+        result = health_query.mood_query("2026-04-01", "daily_mood")
+        self.assertIsInstance(result[0]["associations"], list)
+        self.assertEqual(result[0]["associations"], ["work", "exercise"])
+
+    def test_null_labels_returns_empty_list(self):
+        self._insert_mood("2026-04-20", labels=None, associations=None)
+        result = health_query.mood_query("2026-04-01", "daily_mood")
+        self.assertEqual(result[0]["labels"], [])
+        self.assertEqual(result[0]["associations"], [])
+
+    def test_kind_filter_daily_mood(self):
+        self._insert_mood("2026-04-20", kind="daily_mood")
+        self._insert_mood("2026-04-20", kind="momentary_emotion")
+        result = health_query.mood_query("2026-04-01", "daily_mood")
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["kind"], "daily_mood")
+
+    def test_kind_filter_momentary_emotion(self):
+        self._insert_mood("2026-04-20", kind="daily_mood")
+        self._insert_mood("2026-04-20", kind="momentary_emotion")
+        result = health_query.mood_query("2026-04-01", "momentary_emotion")
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["kind"], "momentary_emotion")
+
+    def test_since_filters_old_rows(self):
+        self._insert_mood("2026-01-01")   # old, should be excluded
+        self._insert_mood("2026-04-20")   # recent, should be included
+        result = health_query.mood_query("2026-04-01", "daily_mood")
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["date"], "2026-04-20")
+
+    def test_ordered_descending_by_date(self):
+        self._insert_mood("2026-04-18")
+        self._insert_mood("2026-04-20")
+        self._insert_mood("2026-04-19")
+        result = health_query.mood_query("2026-04-01", "daily_mood")
+        dates = [r["date"] for r in result]
+        self.assertEqual(dates, sorted(dates, reverse=True))
+
+    def test_values_correct(self):
+        self._insert_mood("2026-04-20", valence=0.8, arousal=0.3,
+                          labels=["calm"], associations=["meditation"])
+        result = health_query.mood_query("2026-04-01", "daily_mood")
+        row = result[0]
+        self.assertAlmostEqual(row["valence"], 0.8, places=5)
+        self.assertAlmostEqual(row["arousal"], 0.3, places=5)
+
+    def test_since_default_covers_30_days(self):
+        # mood_query(None, kind) should use 30 days ago as cutoff
+        # Insert one row far in the past — it must be excluded
+        self._insert_mood("2000-01-01")
+        result = health_query.mood_query(None, "daily_mood")
+        self.assertEqual(result, [])
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
