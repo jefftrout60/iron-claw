@@ -307,7 +307,7 @@ def sync_tags(conn, headers: dict, start: str, end: str) -> None:
                          (id, day, tag_type, start_time, end_time, comment)
                        VALUES (?, ?, ?, ?, ?, ?)""",
                     (rec.get("id"), rec.get("start_day") or rec.get("day"),
-                     rec.get("tag_type_code", rec.get("tag_type")),
+                     rec.get("tag_type_code") or rec.get("tag_type"),
                      rec.get("start_time"), rec.get("end_time"),
                      rec.get("comment")),
                 )

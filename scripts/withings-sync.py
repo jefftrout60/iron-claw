@@ -287,7 +287,8 @@ def sync_body_metrics(conn, access_token: str, start: str, end: str) -> None:
                     fat_ratio_pct   = excluded.fat_ratio_pct,
                     fat_mass_lbs    = excluded.fat_mass_lbs,
                     lean_mass_lbs   = excluded.lean_mass_lbs,
-                    muscle_mass_lbs = excluded.muscle_mass_lbs
+                    muscle_mass_lbs = excluded.muscle_mass_lbs,
+                    source          = excluded.source
                 WHERE body_metrics.weight_lbs      IS NOT excluded.weight_lbs
                    OR body_metrics.fat_ratio_pct   IS NOT excluded.fat_ratio_pct
                    OR body_metrics.fat_mass_lbs    IS NOT excluded.fat_mass_lbs

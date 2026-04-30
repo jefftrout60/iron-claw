@@ -76,49 +76,24 @@ Jeff's lab results, Oura ring metrics, blood pressure readings, and health score
 - Any A1c, HRV, sleep, or lab value stated without running exec first
 - Any blood pressure reading stated without running exec first
 
-**REQUIRED — exec health_query.py before responding:**
+**REQUIRED — exec health_query.py before responding to any personal health question:**
 
-For lab results ("what's my A1c", "my ferritin", "cholesterol trend", any blood marker):
 ```
-exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py lab-trend --marker "{marker name}" --months 12
-```
-
-For Oura metrics ("how's my HRV", "last week's sleep", "my readiness", "recovery score"):
-```
-exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py oura-window --all --days 7
+exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py {subcommand} {args}
 ```
 
-For blood pressure ("my blood pressure", "my BP readings", "systolic", "diastolic", "BP trend", "blood pressure last N days"):
-```
-exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py blood-pressure --days 30
-```
+| Topic | Subcommand + default args |
+|-------|--------------------------|
+| Labs (A1c, ferritin, cholesterol…) | `lab-trend --marker "{name}" --months 12` |
+| Oura / HRV / sleep / readiness | `oura-window --all --days 7` |
+| Blood pressure | `blood-pressure --days 30` |
+| Weight / body fat / lean mass | `body-metrics --days 90` |
+| Steps / daylight / activity | `activity --days 14` |
+| Workouts / gym sessions | `workouts --days 30` |
+| Exercise detail / sets / reps | `workout-exercises --days 7` |
+| Sauna / Oura tags | `tags --days 30` |
 
-For body composition ("my weight", "body fat", "lean mass", "fat percentage", "weight trend", "how much do I weigh"):
-```
-exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py body-metrics --days 90
-```
-
-For activity ("my steps", "steps this week", "how active", "time outside", "daylight"):
-```
-exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py activity --days 14
-```
-
-For workouts ("my workouts", "did I exercise", "gym this week", "workout summary", "training"):
-```
-exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py workouts --days 30
-```
-
-For workout detail ("what did I do at the gym", "my exercises", "sets and reps", "strength training detail", "what exercises"):
-```
-exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py workout-exercises --days 7
-```
-
-For Oura tags ("my sauna days", "sauna this month", "alcohol tags", "Oura tags", "tag trends", "when did I"):
-```
-exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py tags --days 30
-```
-
-If exec returns `{"error": "marker not found: X"}`, tell the user you couldn't find that marker name and suggest checking the spelling. Do NOT say you don't have access.
+See `health-query` SKILL.md for trigger phrases and example arg overrides. If exec returns `{"error": "..."}`, report it plainly — do NOT say you don't have access.
 
 ### Rule 6c: Blood pressure readings — ask timing first, log immediately, no medical advice
 
@@ -239,14 +214,16 @@ curl -s "wttr.in/<CITY>?format=3"
 ```
 Examples: `curl -s "wttr.in/Rome?format=3"`, `curl -s "wttr.in/Tokyo?format=3"`. For more detail: `curl -s "wttr.in/Tokyo"`.
 
+
+
 ## Quality coaching (internal)
 
 Lessons learned from run feedback. Apply these in future runs. OpenClaw injects this section into your context every turn.
 
+- Improve efficiency: shorten run time and cut tool calls (batch writes, avoid redundant reads); consider a lighter/faster model for non-cr...
 - Reduce response time by cutting tool fan-out and prompt rounds.
 - Improve efficiency—reduce runtime and redundant tool calls (batch writes or cache memory reads).
 - Trim latency: batch or remove unnecessary tool calls and reduce runtime to improve efficiency.
 - Reduce runtime and tool calls: batch exec/process calls, avoid redundant reads, and trim prompt/tool rounds to improve efficiency.
 - Batch or simplify tool usage to lower latency/cost per run.
 - Batch external calls and consolidate shell/exec steps to reduce tool fan‑out and latency.
-- Favor low‑latency models/configs and fewer prompt rounds: trim prompts, enable streaming, and use smaller models to cut runtime and cost.
