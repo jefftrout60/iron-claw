@@ -13,6 +13,7 @@ Subcommands (all output JSON to stdout):
   workout-exercises  [--date YYYY-MM-DD | --days N]
   tags               [--days N] [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--type TAG]
   mood               [--since YYYY-MM-DD] [--kind daily_mood|momentary_emotion]
+  sync-status        (no args) — last_synced and stale flag per source
 
 Exit 0 on success, exit 1 with {"error": "..."} JSON on failure.
 """
@@ -588,6 +589,50 @@ def mood_query(since: str | None, kind: str) -> list:
 
 
 # ---------------------------------------------------------------------------
+# sync-status
+# ---------------------------------------------------------------------------
+
+# Resources whose data expires quickly — flag stale if not synced in >2 days.
+# Manual imports (workouts, labs, etc.) are not flagged stale even if old.
+_AUTOMATED_SOURCES = {"daily_summaries", "sleep", "heartrate", "oura_tags", "withings"}
+
+
+def cmd_sync_status(conn) -> dict:
+    rows = conn.execute(
+        "SELECT resource, last_synced FROM sync_state ORDER BY resource"
+    ).fetchall()
+
+    result: dict = {}
+    today = date.today()
+    for row in rows:
+        resource = row["resource"]
+        raw_ts = row["last_synced"]
+
+        days_ago: int | None = None
+        if raw_ts:
+            try:
+                # last_synced may be a full ISO datetime or a plain date string
+                synced_date = date.fromisoformat(raw_ts[:10])
+                days_ago = (today - synced_date).days
+            except (ValueError, TypeError):
+                days_ago = None
+
+        stale = (
+            resource in _AUTOMATED_SOURCES
+            and days_ago is not None
+            and days_ago > 2
+        )
+
+        result[resource] = {
+            "last_synced": raw_ts,
+            "days_ago": days_ago,
+            "stale": stale,
+        }
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # search
 # ---------------------------------------------------------------------------
 
@@ -703,6 +748,8 @@ def main() -> None:
                     choices=["daily_mood", "momentary_emotion"],
                     help="Kind of state_of_mind entry (default: daily_mood)")
 
+    sub.add_parser("sync-status", help="Last sync timestamp and stale flag per data source")
+
     args = parser.parse_args()
 
     if args.command == "lab-trend":
@@ -728,6 +775,9 @@ def main() -> None:
         result = tags_query(args.days, args.start, args.end, args.tag_type)
     elif args.command == "mood":
         result = {"mood": mood_query(args.since, args.kind)}
+    elif args.command == "sync-status":
+        conn = health_db.get_connection()
+        result = {"sync_status": cmd_sync_status(conn)}
     _out(result)
 
 

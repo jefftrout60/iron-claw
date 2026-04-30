@@ -793,6 +793,137 @@ class TestMoodQuery(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# cmd_sync_status tests
+# ---------------------------------------------------------------------------
+
+class TestSyncStatus(unittest.TestCase):
+    """Tests for health_query.cmd_sync_status()."""
+
+    def setUp(self):
+        self.conn = _make_conn()
+        self._original_get_connection = health_db.get_connection
+        health_query.health_db.get_connection = lambda *a, **kw: self.conn
+
+    def tearDown(self):
+        health_db.get_connection = self._original_get_connection
+        self.conn.close()
+
+    def _insert_sync(self, resource, last_synced):
+        self.conn.execute(
+            "INSERT OR REPLACE INTO sync_state (resource, last_synced) VALUES (?, ?)",
+            (resource, last_synced),
+        )
+        self.conn.commit()
+
+    def test_empty_sync_state_returns_empty_dict(self):
+        result = health_query.cmd_sync_status(self.conn)
+        self.assertEqual(result, {})
+
+    def test_stale_automated_source_when_days_ago_exceeds_2(self):
+        # daily_summaries is an automated source; 5 days ago → stale
+        self._insert_sync("daily_summaries", "2026-04-25")
+        from unittest.mock import patch
+        from datetime import date
+        with patch("health_query.date") as mock_date:
+            mock_date.today.return_value = date(2026, 4, 30)
+            mock_date.fromisoformat.side_effect = date.fromisoformat
+            result = health_query.cmd_sync_status(self.conn)
+        self.assertEqual(result["daily_summaries"]["days_ago"], 5)
+        self.assertTrue(result["daily_summaries"]["stale"])
+
+    def test_not_stale_automated_source_within_2_days(self):
+        # sleep synced 2 days ago → not stale (boundary: must be > 2)
+        self._insert_sync("sleep", "2026-04-28")
+        from unittest.mock import patch
+        from datetime import date
+        with patch("health_query.date") as mock_date:
+            mock_date.today.return_value = date(2026, 4, 30)
+            mock_date.fromisoformat.side_effect = date.fromisoformat
+            result = health_query.cmd_sync_status(self.conn)
+        self.assertEqual(result["sleep"]["days_ago"], 2)
+        self.assertFalse(result["sleep"]["stale"])
+
+    def test_manual_source_never_stale_even_if_old(self):
+        # "workouts" is not in the automated set → stale must always be False
+        self._insert_sync("workouts", "2026-01-01")
+        from unittest.mock import patch
+        from datetime import date
+        with patch("health_query.date") as mock_date:
+            mock_date.today.return_value = date(2026, 4, 30)
+            mock_date.fromisoformat.side_effect = date.fromisoformat
+            result = health_query.cmd_sync_status(self.conn)
+        self.assertFalse(result["workouts"]["stale"])
+        self.assertGreater(result["workouts"]["days_ago"], 2)
+
+    def test_days_ago_calculation_accuracy(self):
+        self._insert_sync("heartrate", "2026-04-27")
+        from unittest.mock import patch
+        from datetime import date
+        with patch("health_query.date") as mock_date:
+            mock_date.today.return_value = date(2026, 4, 30)
+            mock_date.fromisoformat.side_effect = date.fromisoformat
+            result = health_query.cmd_sync_status(self.conn)
+        self.assertEqual(result["heartrate"]["days_ago"], 3)
+
+    def test_days_ago_1_not_stale(self):
+        self._insert_sync("withings", "2026-04-29")
+        from unittest.mock import patch
+        from datetime import date
+        with patch("health_query.date") as mock_date:
+            mock_date.today.return_value = date(2026, 4, 30)
+            mock_date.fromisoformat.side_effect = date.fromisoformat
+            result = health_query.cmd_sync_status(self.conn)
+        self.assertEqual(result["withings"]["days_ago"], 1)
+        self.assertFalse(result["withings"]["stale"])
+
+    def test_days_ago_3_oura_tags_stale(self):
+        self._insert_sync("oura_tags", "2026-04-27")
+        from unittest.mock import patch
+        from datetime import date
+        with patch("health_query.date") as mock_date:
+            mock_date.today.return_value = date(2026, 4, 30)
+            mock_date.fromisoformat.side_effect = date.fromisoformat
+            result = health_query.cmd_sync_status(self.conn)
+        self.assertEqual(result["oura_tags"]["days_ago"], 3)
+        self.assertTrue(result["oura_tags"]["stale"])
+
+    def test_malformed_date_string_gives_days_ago_none(self):
+        # Insert a row with a garbled date — should not crash, days_ago = None
+        self.conn.execute(
+            "INSERT OR REPLACE INTO sync_state (resource, last_synced) VALUES (?, ?)",
+            ("daily_summaries", "not-a-date"),
+        )
+        self.conn.commit()
+        result = health_query.cmd_sync_status(self.conn)
+        self.assertIsNone(result["daily_summaries"]["days_ago"])
+        self.assertFalse(result["daily_summaries"]["stale"])
+
+    def test_full_iso_datetime_truncated_to_date(self):
+        # last_synced stored as ISO datetime (with time component)
+        self._insert_sync("sleep", "2026-04-28T14:32:00Z")
+        from unittest.mock import patch
+        from datetime import date
+        with patch("health_query.date") as mock_date:
+            mock_date.today.return_value = date(2026, 4, 30)
+            mock_date.fromisoformat.side_effect = date.fromisoformat
+            result = health_query.cmd_sync_status(self.conn)
+        self.assertEqual(result["sleep"]["days_ago"], 2)
+
+    def test_result_preserves_last_synced_string(self):
+        ts = "2026-04-28"
+        self._insert_sync("heartrate", ts)
+        result = health_query.cmd_sync_status(self.conn)
+        self.assertEqual(result["heartrate"]["last_synced"], ts)
+
+    def test_multiple_resources_ordered_by_resource(self):
+        self._insert_sync("withings", "2026-04-28")
+        self._insert_sync("daily_summaries", "2026-04-28")
+        self._insert_sync("sleep", "2026-04-28")
+        result = health_query.cmd_sync_status(self.conn)
+        self.assertEqual(list(result.keys()), sorted(result.keys()))
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 

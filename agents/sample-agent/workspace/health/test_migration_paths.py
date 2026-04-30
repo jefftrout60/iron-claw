@@ -1,0 +1,230 @@
+#!/usr/bin/env python3
+"""
+Tests for health_db schema migration paths.
+
+Verifies that initialize_schema correctly upgrades a DB from any prior version
+to the current SCHEMA_VERSION (5), and that all column patches are idempotent.
+
+Strategy for incremental-path tests:
+  1. Open an in-memory DB and call initialize_schema → reaches v5.
+  2. Stamp the DB back to version N with PRAGMA user_version = N.
+  3. Drop tables that were added in versions > N.
+  4. Call initialize_schema again — it must apply only the missing migrations.
+"""
+
+import sqlite3
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+
+import health_db
+
+
+# ---------------------------------------------------------------------------
+# Helper: tables introduced in each version (excluding v1 base tables)
+# ---------------------------------------------------------------------------
+
+# Tables added per version (used by _conn_at_version to decide what to drop)
+_TABLES_ADDED_BY_VERSION = {
+    5: ["state_of_mind"],
+    4: ["workout_exercises", "oura_tags"],
+    3: ["activity_daily", "workouts"],
+    2: ["body_metrics"],
+}
+
+# All tables expected in a fully-migrated v5 DB
+_ALL_V5_TABLES = {
+    # v1 base tables
+    "health_knowledge",
+    "lab_markers",
+    "lab_results",
+    "oura_daily",
+    "oura_sleep_sessions",
+    "oura_heartrate",
+    "sync_state",
+    "blood_pressure",
+    # v2
+    "body_metrics",
+    # v3
+    "activity_daily",
+    "workouts",
+    # v4
+    "workout_exercises",
+    "oura_tags",
+    # v5
+    "state_of_mind",
+}
+
+
+def _list_tables(conn: sqlite3.Connection) -> set:
+    """Return set of user-created table names in the connection."""
+    rows = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    ).fetchall()
+    return {row[0] for row in rows}
+
+
+def _conn_at_version(n: int) -> sqlite3.Connection:
+    """
+    Return an in-memory DB that looks like it was last migrated to version N.
+
+    Steps:
+      1. Create in-memory DB, run initialize_schema → reaches v5.
+      2. Stamp version down to N.
+      3. Drop tables introduced in versions > N so the DB truly resembles a v-N DB.
+    """
+    conn = sqlite3.connect(":memory:")
+    conn.execute("PRAGMA foreign_keys = OFF")   # allow dropping tables with FK refs
+    conn.row_factory = sqlite3.Row
+    health_db.initialize_schema(conn)
+
+    # Stamp down
+    conn.execute(f"PRAGMA user_version = {n}")
+    conn.commit()
+
+    # Drop tables added in versions > N (highest version first to respect FK order)
+    for ver in sorted(_TABLES_ADDED_BY_VERSION.keys(), reverse=True):
+        if ver > n:
+            for table in _TABLES_ADDED_BY_VERSION[ver]:
+                conn.execute(f"DROP TABLE IF EXISTS {table}")
+    conn.commit()
+
+    # Re-enable FK enforcement for the tests
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+class TestFreshDBReachesV5(unittest.TestCase):
+    """An empty in-memory DB must reach version 5 with all tables present."""
+
+    def test_fresh_db_reaches_v5(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        health_db.initialize_schema(conn)
+
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        self.assertEqual(version, health_db.SCHEMA_VERSION)
+        self.assertEqual(version, 5)
+
+        tables = _list_tables(conn)
+        # Every table including state_of_mind must exist
+        for table in _ALL_V5_TABLES:
+            self.assertIn(table, tables, f"Missing table after fresh init: {table}")
+
+
+class TestV2ToV5(unittest.TestCase):
+    """A v2 DB (has body_metrics, missing v3-v5 tables) must upgrade to v5."""
+
+    def test_v2_to_v5(self):
+        conn = _conn_at_version(2)
+
+        # Confirm the setup looks like v2: body_metrics present, v3+ absent
+        tables_before = _list_tables(conn)
+        self.assertIn("body_metrics", tables_before)
+        for table in ["activity_daily", "workouts", "workout_exercises",
+                      "oura_tags", "state_of_mind"]:
+            self.assertNotIn(table, tables_before,
+                             f"Setup error: {table} should not exist at v2")
+
+        health_db.initialize_schema(conn)
+
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        self.assertEqual(version, 5)
+
+        tables_after = _list_tables(conn)
+        for table in ["workout_exercises", "oura_tags", "state_of_mind"]:
+            self.assertIn(table, tables_after,
+                          f"Missing table after v2→v5 migration: {table}")
+
+
+class TestV3ToV5(unittest.TestCase):
+    """A v3 DB (has activity_daily/workouts, missing v4-v5 tables) must upgrade to v5."""
+
+    def test_v3_to_v5(self):
+        conn = _conn_at_version(3)
+
+        tables_before = _list_tables(conn)
+        self.assertIn("activity_daily", tables_before)
+        self.assertIn("workouts", tables_before)
+        for table in ["workout_exercises", "oura_tags", "state_of_mind"]:
+            self.assertNotIn(table, tables_before,
+                             f"Setup error: {table} should not exist at v3")
+
+        health_db.initialize_schema(conn)
+
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        self.assertEqual(version, 5)
+
+        tables_after = _list_tables(conn)
+        for table in ["workout_exercises", "oura_tags", "state_of_mind"]:
+            self.assertIn(table, tables_after,
+                          f"Missing table after v3→v5 migration: {table}")
+
+
+class TestV4ToV5(unittest.TestCase):
+    """A v4 DB (has workout_exercises/oura_tags, missing state_of_mind) must upgrade to v5."""
+
+    def test_v4_to_v5(self):
+        conn = _conn_at_version(4)
+
+        tables_before = _list_tables(conn)
+        self.assertIn("workout_exercises", tables_before)
+        self.assertIn("oura_tags", tables_before)
+        self.assertNotIn("state_of_mind", tables_before,
+                         "Setup error: state_of_mind should not exist at v4")
+
+        health_db.initialize_schema(conn)
+
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        self.assertEqual(version, 5)
+
+        tables_after = _list_tables(conn)
+        self.assertIn("state_of_mind", tables_after,
+                      "Missing state_of_mind after v4→v5 migration")
+
+
+class TestIdempotentColumnPatches(unittest.TestCase):
+    """Calling initialize_schema twice on a v5 DB must not raise any error."""
+
+    def test_idempotent_column_patches(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        health_db.initialize_schema(conn)
+
+        # Second call — all CREATE IF NOT EXISTS and try/except ALTER TABLE
+        # patches must be silent
+        try:
+            health_db.initialize_schema(conn)
+        except Exception as exc:
+            self.fail(f"initialize_schema raised on second call: {exc}")
+
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        self.assertEqual(version, 5)
+
+
+class TestSyncHelpersAvailable(unittest.TestCase):
+    """get_last_synced and set_last_synced must be accessible as module functions."""
+
+    def test_sync_helpers_available(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        health_db.initialize_schema(conn)
+
+        # Initially no record → returns the supplied default
+        result = health_db.get_last_synced(conn, "oura_daily", default="never")
+        self.assertEqual(result, "never")
+
+        # Write a value and read it back
+        health_db.set_last_synced(conn, "oura_daily", "2026-04-30T00:00:00Z")
+        result = health_db.get_last_synced(conn, "oura_daily")
+        self.assertEqual(result, "2026-04-30T00:00:00Z")
+
+
+if __name__ == "__main__":
+    unittest.main()
