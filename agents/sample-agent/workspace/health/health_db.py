@@ -444,6 +444,7 @@ def backfill_daily_hrv(conn: sqlite3.Connection) -> None:
         SET avg_hrv_rmssd = (
             SELECT avg_hrv FROM oura_sleep_sessions
             WHERE oura_sleep_sessions.day = oura_daily.day
+              AND avg_hrv IS NOT NULL
             ORDER BY
                 CASE WHEN type = 'long_sleep' THEN 0 ELSE 1 END,
                 total_sleep_sec DESC

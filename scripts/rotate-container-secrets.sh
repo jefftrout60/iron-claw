@@ -78,8 +78,7 @@ with open(env_path, 'r') as f:
 
 # Match KEY=<anything up to end of line>, including optional leading #
 pattern = r'^(' + re.escape(key) + r')=.*$'
-replacement = r'\g<1>=' + new_val
-updated, count = re.subn(pattern, replacement, content, flags=re.MULTILINE)
+updated, count = re.subn(pattern, lambda m: m.group(1) + '=' + new_val, content, flags=re.MULTILINE)
 
 if count == 0:
     # Key not present — append it

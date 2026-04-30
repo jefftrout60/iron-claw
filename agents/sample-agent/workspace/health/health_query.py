@@ -594,7 +594,7 @@ def mood_query(since: str | None, kind: str) -> list:
 
 # Resources whose data expires quickly — flag stale if not synced in >2 days.
 # Manual imports (workouts, labs, etc.) are not flagged stale even if old.
-_AUTOMATED_SOURCES = {"daily_summaries", "sleep", "heartrate", "oura_tags", "withings"}
+_AUTOMATED_SOURCES = {"daily_summaries", "sleep", "heartrate", "oura_tags", "withings_body"}
 
 
 def cmd_sync_status(conn) -> dict:
