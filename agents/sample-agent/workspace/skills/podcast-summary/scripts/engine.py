@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 # Ensure scripts/ is on sys.path for sibling imports
@@ -524,6 +524,13 @@ Examples:
     feeds_data, episodes_data = load_vault_data()
 
     # ------------------------------------------------------------------
+    # 2b. Load existing processing status (for email dedup guard)
+    # ------------------------------------------------------------------
+    v_pre = _get_vault_module()
+    _status_path = v_pre.get_vault_path("processing_status.json")
+    status_before = v_pre.load_vault(_status_path) if _status_path.exists() else {}
+
+    # ------------------------------------------------------------------
     # 3. Check new episodes
     # ------------------------------------------------------------------
     # TODO: Task 4.1 — add real --episode support here
@@ -554,7 +561,22 @@ Examples:
 
     # Send a single digest email after all processing is complete (episodes +
     # newsletters). Newsletter counts are included in the footer when present.
-    if processed and not args.no_email:
+    # Guard: skip if we already sent within the last 4 hours — prevents the
+    # ~1:30 AM duplicate that occurs when something triggers engine.py a second
+    # time after the 11 PM run (the gap spans midnight so a date check fails).
+    _DEDUP_WINDOW = timedelta(hours=4)
+    _last_sent = status_before.get("last_email_sent_at")
+    _already_sent = False
+    if _last_sent:
+        try:
+            _sent_ago = datetime.now(timezone.utc) - datetime.fromisoformat(_last_sent)
+            if _sent_ago < _DEDUP_WINDOW:
+                print(f"[engine] Digest sent {_sent_ago} ago — skipping duplicate email")
+                _already_sent = True
+        except (ValueError, TypeError):
+            pass
+
+    if processed and not args.no_email and not _already_sent:
         to_email = env.get("PODCAST_DIGEST_TO_EMAIL", "")
         if to_email:
             import digest_emailer
@@ -567,6 +589,7 @@ Examples:
                     newsletter_count=newsletters_count,
                     newsletter_names=newsletter_names,
                 )
+                status["last_email_sent_at"] = datetime.now(timezone.utc).isoformat()
             except Exception as exc:
                 print(f"[engine] WARNING: digest email failed: {exc}", file=sys.stderr)
         else:
