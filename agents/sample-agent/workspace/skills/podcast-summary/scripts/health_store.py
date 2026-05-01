@@ -78,6 +78,8 @@ def append_entry(entry_data: dict, api_key: str = "", model: str = "gpt-4o-mini"
     Returns None if a duplicate entry (same show + title + date) already exists.
     """
     topics = extract_topics(entry_data["summary"], api_key, model)
+    enrichment_status = 'done' if topics else 'failed'
+    topics_text = ' '.join(topics) if topics else ''
 
     source = entry_data["source"]
     show_slug = slugify(entry_data["show"])
@@ -103,8 +105,9 @@ def append_entry(entry_data: dict, api_key: str = "", model: str = "gpt-4o-mini"
     cursor = conn.execute(
         """INSERT OR IGNORE INTO health_knowledge
              (id, show, episode_title, episode_number, date, source,
-              source_quality, topics, summary, tagged_by, raw_transcript)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+              source_quality, topics, summary, tagged_by, raw_transcript,
+              enrichment_status, topics_text)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             entry["id"],
             entry["show"],
@@ -117,6 +120,8 @@ def append_entry(entry_data: dict, api_key: str = "", model: str = "gpt-4o-mini"
             entry["summary"],
             entry["tagged_by"],
             entry["raw_transcript"],
+            enrichment_status,
+            topics_text,
         ),
     )
     if cursor.rowcount == 0:
