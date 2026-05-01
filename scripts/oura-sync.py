@@ -191,177 +191,221 @@ def sync_daily_summaries(conn, headers: dict, start: str, end: str) -> None:
     """
     log.info("Syncing daily summaries %s → %s", start, end)
 
-    # Accumulate per-day data from multiple endpoints
-    daily: dict[str, dict] = {}
-
-    def merge(day: str, **kwargs) -> None:
-        if day not in daily:
-            daily[day] = {"id": f"daily-{day}", "day": day}
-        daily[day].update({k: v for k, v in kwargs.items() if v is not None})
+    last_good_date = None
 
     for chunk_start, chunk_end in date_chunks(start, end, days=90):
-        # daily_sleep
-        for rec in fetch_all("daily_sleep", chunk_start, chunk_end, headers):
-            day = rec.get("day", "")
-            if not day:
-                continue
-            score = rec.get("score")
-            contribs = rec.get("contributors") or {}
-            merge(day, sleep_score=score,
-                  contributors_json=json.dumps({"sleep": contribs}))
+        # Accumulate per-day data from multiple endpoints for this chunk only
+        daily: dict[str, dict] = {}
 
-        # daily_readiness
-        for rec in fetch_all("daily_readiness", chunk_start, chunk_end, headers):
-            day = rec.get("day", "")
-            merge(day,
-                  readiness_score=rec.get("score"),
-                  temp_deviation=rec.get("temperature_deviation"),
-                  resting_heart_rate=(rec.get("contributors") or {}).get("resting_heart_rate"))
+        def merge(day: str, **kwargs) -> None:
+            if day not in daily:
+                daily[day] = {"id": f"daily-{day}", "day": day}
+            daily[day].update({k: v for k, v in kwargs.items() if v is not None})
 
-        # daily_activity
-        for rec in fetch_all("daily_activity", chunk_start, chunk_end, headers):
-            day = rec.get("day", "")
-            merge(day,
-                  activity_score=rec.get("score"),
-                  steps=rec.get("steps"),
-                  active_calories=rec.get("active_calories"),
-                  total_calories=rec.get("total_calories"))
+        try:
+            # daily_sleep
+            for rec in fetch_all("daily_sleep", chunk_start, chunk_end, headers):
+                day = rec.get("day", "")
+                if not day:
+                    continue
+                score = rec.get("score")
+                contribs = rec.get("contributors") or {}
+                merge(day, sleep_score=score,
+                      contributors_json=json.dumps({"sleep": contribs}))
 
-        # daily_spo2 (note: daily_hrv endpoint doesn't exist in v2 API;
-        # HRV is already captured via sleep sessions avg_hrv field)
-        for rec in fetch_all("daily_spo2", chunk_start, chunk_end, headers):
-            day = rec.get("day", "")
-            spo2 = rec.get("spo2_percentage") or {}
-            merge(day,
-                  spo2_avg=spo2.get("average"),
-                  spo2_min=spo2.get("min"))
+            # daily_readiness
+            for rec in fetch_all("daily_readiness", chunk_start, chunk_end, headers):
+                day = rec.get("day", "")
+                merge(day,
+                      readiness_score=rec.get("score"),
+                      temp_deviation=rec.get("temperature_deviation"),
+                      resting_heart_rate=(rec.get("contributors") or {}).get("resting_heart_rate"))
 
-        # daily_stress (Gen3 — 404 handled in fetch_all)
-        for rec in fetch_all("daily_stress", chunk_start, chunk_end, headers):
-            day = rec.get("day", "")
-            merge(day,
-                  stress_high_seconds=rec.get("stress_high"),
-                  recovery_high_seconds=rec.get("recovery_high"),
-                  stress_day_summary=rec.get("day_summary"))
+            # daily_activity
+            for rec in fetch_all("daily_activity", chunk_start, chunk_end, headers):
+                day = rec.get("day", "")
+                merge(day,
+                      activity_score=rec.get("score"),
+                      steps=rec.get("steps"),
+                      active_calories=rec.get("active_calories"),
+                      total_calories=rec.get("total_calories"))
 
-        # daily_resilience (Gen3 — 404 handled in fetch_all)
-        for rec in fetch_all("daily_resilience", chunk_start, chunk_end, headers):
-            day = rec.get("day", "")
-            merge(day, resilience_level=rec.get("level"))
+            # daily_spo2 (note: daily_hrv endpoint doesn't exist in v2 API;
+            # HRV is already captured via sleep sessions avg_hrv field)
+            for rec in fetch_all("daily_spo2", chunk_start, chunk_end, headers):
+                day = rec.get("day", "")
+                spo2 = rec.get("spo2_percentage") or {}
+                merge(day,
+                      spo2_avg=spo2.get("average"),
+                      spo2_min=spo2.get("min"))
 
-    # Upsert all accumulated days
-    for row in daily.values():
-        conn.execute(
-            """INSERT OR REPLACE INTO oura_daily
-                 (id, day, sleep_score, readiness_score, activity_score,
-                  steps, active_calories, total_calories, avg_hrv_rmssd,
-                  resting_heart_rate, temp_deviation, spo2_avg, spo2_min,
-                  stress_high_seconds, recovery_high_seconds, stress_day_summary,
-                  resilience_level, contributors_json)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                row.get("id"), row.get("day"),
-                row.get("sleep_score"), row.get("readiness_score"), row.get("activity_score"),
-                row.get("steps"), row.get("active_calories"), row.get("total_calories"),
-                row.get("avg_hrv_rmssd"), row.get("resting_heart_rate"), row.get("temp_deviation"),
-                row.get("spo2_avg"), row.get("spo2_min"),
-                row.get("stress_high_seconds"), row.get("recovery_high_seconds"),
-                row.get("stress_day_summary"), row.get("resilience_level"),
-                row.get("contributors_json"),
-            ),
-        )
-    conn.commit()
-    log.info("Upserted %d daily summary rows", len(daily))
-    health_db.set_last_synced(conn, "daily_summaries",
-                              (date.fromisoformat(end) - timedelta(days=OVERLAP_DAYS)).isoformat())
+            # daily_stress (Gen3 — 404 handled in fetch_all)
+            for rec in fetch_all("daily_stress", chunk_start, chunk_end, headers):
+                day = rec.get("day", "")
+                merge(day,
+                      stress_high_seconds=rec.get("stress_high"),
+                      recovery_high_seconds=rec.get("recovery_high"),
+                      stress_day_summary=rec.get("day_summary"))
+
+            # daily_resilience (Gen3 — 404 handled in fetch_all)
+            for rec in fetch_all("daily_resilience", chunk_start, chunk_end, headers):
+                day = rec.get("day", "")
+                merge(day, resilience_level=rec.get("level"))
+
+        except FetchError as e:
+            log.warning("oura fetch failed at chunk %s–%s: %s", chunk_start, chunk_end, e)
+            break
+
+        # Upsert this chunk's accumulated days and mark as confirmed
+        for row in daily.values():
+            conn.execute(
+                """INSERT OR REPLACE INTO oura_daily
+                     (id, day, sleep_score, readiness_score, activity_score,
+                      steps, active_calories, total_calories, avg_hrv_rmssd,
+                      resting_heart_rate, temp_deviation, spo2_avg, spo2_min,
+                      stress_high_seconds, recovery_high_seconds, stress_day_summary,
+                      resilience_level, contributors_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    row.get("id"), row.get("day"),
+                    row.get("sleep_score"), row.get("readiness_score"), row.get("activity_score"),
+                    row.get("steps"), row.get("active_calories"), row.get("total_calories"),
+                    row.get("avg_hrv_rmssd"), row.get("resting_heart_rate"), row.get("temp_deviation"),
+                    row.get("spo2_avg"), row.get("spo2_min"),
+                    row.get("stress_high_seconds"), row.get("recovery_high_seconds"),
+                    row.get("stress_day_summary"), row.get("resilience_level"),
+                    row.get("contributors_json"),
+                ),
+            )
+        conn.commit()
+        log.info("Upserted %d daily summary rows for chunk %s–%s", len(daily), chunk_start, chunk_end)
+        last_good_date = chunk_end
+
+    if last_good_date:
+        safe_date = (date.fromisoformat(last_good_date) - timedelta(days=OVERLAP_DAYS)).isoformat()
+        health_db.set_last_synced(conn, "daily_summaries", safe_date)
+    # If last_good_date is None: no chunks succeeded; don't advance last_synced
 
 
 def sync_sleep_sessions(conn, headers: dict, start: str, end: str) -> None:
     """Sync detailed sleep sessions into oura_sleep_sessions."""
     log.info("Syncing sleep sessions %s → %s", start, end)
-    count = 0
+    total_count = 0
+    last_good_date = None
 
     for chunk_start, chunk_end in date_chunks(start, end, days=30):
-        for rec in fetch_all("sleep", chunk_start, chunk_end, headers):
-            conn.execute(
-                """INSERT OR REPLACE INTO oura_sleep_sessions
-                     (id, day, type, bedtime_start, bedtime_end,
-                      total_sleep_sec, deep_sleep_sec, light_sleep_sec,
-                      rem_sleep_sec, awake_sec, efficiency, latency_sec,
-                      avg_hrv, avg_heart_rate, lowest_heart_rate,
-                      hr_5min, hrv_5min, sleep_phase_5min)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    rec.get("id"), rec.get("day"), rec.get("type"),
-                    rec.get("bedtime_start"), rec.get("bedtime_end"),
-                    rec.get("total_sleep_duration"), rec.get("deep_sleep_duration"),
-                    rec.get("light_sleep_duration"), rec.get("rem_sleep_duration"),
-                    rec.get("awake_time"), rec.get("efficiency"), rec.get("latency"),
-                    rec.get("average_hrv"), rec.get("average_heart_rate"),
-                    rec.get("lowest_heart_rate"),
-                    json.dumps(rec.get("hr_5_min")) if rec.get("hr_5_min") else None,
-                    json.dumps(rec.get("hrv_5_min")) if rec.get("hrv_5_min") else None,
-                    rec.get("sleep_phase_5_min"),
-                ),
-            )
-            count += 1
+        chunk_count = 0
+        try:
+            for rec in fetch_all("sleep", chunk_start, chunk_end, headers):
+                conn.execute(
+                    """INSERT OR REPLACE INTO oura_sleep_sessions
+                         (id, day, type, bedtime_start, bedtime_end,
+                          total_sleep_sec, deep_sleep_sec, light_sleep_sec,
+                          rem_sleep_sec, awake_sec, efficiency, latency_sec,
+                          avg_hrv, avg_heart_rate, lowest_heart_rate,
+                          hr_5min, hrv_5min, sleep_phase_5min)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        rec.get("id"), rec.get("day"), rec.get("type"),
+                        rec.get("bedtime_start"), rec.get("bedtime_end"),
+                        rec.get("total_sleep_duration"), rec.get("deep_sleep_duration"),
+                        rec.get("light_sleep_duration"), rec.get("rem_sleep_duration"),
+                        rec.get("awake_time"), rec.get("efficiency"), rec.get("latency"),
+                        rec.get("average_hrv"), rec.get("average_heart_rate"),
+                        rec.get("lowest_heart_rate"),
+                        json.dumps(rec.get("hr_5_min")) if rec.get("hr_5_min") else None,
+                        json.dumps(rec.get("hrv_5_min")) if rec.get("hrv_5_min") else None,
+                        rec.get("sleep_phase_5_min"),
+                    ),
+                )
+                chunk_count += 1
+        except FetchError as e:
+            log.warning("oura fetch failed at chunk %s–%s: %s", chunk_start, chunk_end, e)
+            break
 
-    conn.commit()
-    log.info("Upserted %d sleep session rows", count)
-    health_db.backfill_daily_hrv(conn)
-    log.info("Refreshed avg_hrv_rmssd from sleep sessions")
-    health_db.set_last_synced(conn, "sleep",
-                              (date.fromisoformat(end) - timedelta(days=OVERLAP_DAYS)).isoformat())
+        conn.commit()
+        total_count += chunk_count
+        last_good_date = chunk_end
+
+    log.info("Upserted %d sleep session rows", total_count)
+    if last_good_date:
+        health_db.backfill_daily_hrv(conn)
+        log.info("Refreshed avg_hrv_rmssd from sleep sessions")
+        safe_date = (date.fromisoformat(last_good_date) - timedelta(days=OVERLAP_DAYS)).isoformat()
+        health_db.set_last_synced(conn, "sleep", safe_date)
+    # If last_good_date is None: no chunks succeeded; don't advance last_synced
 
 
 def sync_heartrate(conn, headers: dict, start: str, end: str) -> None:
     """Sync intraday heart rate stream into oura_heartrate (7-day chunks)."""
     log.info("Syncing heart rate stream %s → %s", start, end)
-    count = 0
+    total_count = 0
+    last_good_date = None
 
     for chunk_start, chunk_end in date_chunks(start, end, days=7):
-        for rec in fetch_all("heartrate", chunk_start, chunk_end, headers):
-            try:
-                conn.execute(
-                    "INSERT OR REPLACE INTO oura_heartrate (timestamp, bpm, source) VALUES (?, ?, ?)",
-                    (rec.get("timestamp"), rec.get("bpm"), rec.get("source")),
-                )
-                count += 1
-            except Exception as e:
-                log.warning("Skipping heartrate row: %s", e)
+        chunk_count = 0
+        try:
+            for rec in fetch_all("heartrate", chunk_start, chunk_end, headers):
+                try:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO oura_heartrate (timestamp, bpm, source) VALUES (?, ?, ?)",
+                        (rec.get("timestamp"), rec.get("bpm"), rec.get("source")),
+                    )
+                    chunk_count += 1
+                except Exception as e:
+                    log.warning("Skipping heartrate row: %s", e)
+        except FetchError as e:
+            log.warning("oura fetch failed at chunk %s–%s: %s", chunk_start, chunk_end, e)
+            break
 
-    conn.commit()
-    log.info("Upserted %d heart rate rows", count)
-    health_db.set_last_synced(conn, "heartrate",
-                              (date.fromisoformat(end) - timedelta(days=OVERLAP_DAYS)).isoformat())
+        conn.commit()
+        total_count += chunk_count
+        last_good_date = chunk_end
+
+    log.info("Upserted %d heart rate rows", total_count)
+    if last_good_date:
+        safe_date = (date.fromisoformat(last_good_date) - timedelta(days=OVERLAP_DAYS)).isoformat()
+        health_db.set_last_synced(conn, "heartrate", safe_date)
+    # If last_good_date is None: no chunks succeeded; don't advance last_synced
     cleanup_old_heartrate(conn)
 
 
 def sync_tags(conn, headers: dict, start: str, end: str) -> None:
     """Sync Oura enhanced tags into oura_tags table."""
     log.info("Syncing Oura tags %s → %s", start, end)
-    count = 0
+    total_count = 0
+    last_good_date = None
 
     for chunk_start, chunk_end in date_chunks(start, end, days=90):
-        for rec in fetch_all("enhanced_tag", chunk_start, chunk_end, headers):
-            try:
-                conn.execute(
-                    """INSERT OR REPLACE INTO oura_tags
-                         (id, day, tag_type, start_time, end_time, comment)
-                       VALUES (?, ?, ?, ?, ?, ?)""",
-                    (rec.get("id"), rec.get("start_day") or rec.get("day"),
-                     rec.get("tag_type_code") or rec.get("tag_type"),
-                     rec.get("start_time"), rec.get("end_time"),
-                     rec.get("comment")),
-                )
-                count += 1
-            except Exception as e:
-                log.warning("Skipping tag row: %s", e)
+        chunk_count = 0
+        try:
+            for rec in fetch_all("enhanced_tag", chunk_start, chunk_end, headers):
+                try:
+                    conn.execute(
+                        """INSERT OR REPLACE INTO oura_tags
+                             (id, day, tag_type, start_time, end_time, comment)
+                           VALUES (?, ?, ?, ?, ?, ?)""",
+                        (rec.get("id"), rec.get("start_day") or rec.get("day"),
+                         rec.get("tag_type_code") or rec.get("tag_type"),
+                         rec.get("start_time"), rec.get("end_time"),
+                         rec.get("comment")),
+                    )
+                    chunk_count += 1
+                except Exception as e:
+                    log.warning("Skipping tag row: %s", e)
+        except FetchError as e:
+            log.warning("oura fetch failed at chunk %s–%s: %s", chunk_start, chunk_end, e)
+            break
 
-    conn.commit()
-    log.info("Upserted %d tag rows", count)
-    health_db.set_last_synced(conn, "oura_tags",
-                              (date.fromisoformat(end) - timedelta(days=OVERLAP_DAYS)).isoformat())
+        conn.commit()
+        total_count += chunk_count
+        last_good_date = chunk_end
+
+    log.info("Upserted %d tag rows", total_count)
+    if last_good_date:
+        safe_date = (date.fromisoformat(last_good_date) - timedelta(days=OVERLAP_DAYS)).isoformat()
+        health_db.set_last_synced(conn, "oura_tags", safe_date)
+    # If last_good_date is None: no chunks succeeded; don't advance last_synced
 
 
 # ---------------------------------------------------------------------------
