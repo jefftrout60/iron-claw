@@ -27,9 +27,7 @@
 
 ### Immediate (do before next scope session)
 
-- [ ] **Rotate container secrets** — run `scripts/rotate-container-secrets.sh`, get new OpenAI/Telegram/Gmail credentials from their dashboards
 - [ ] **iMessage manual test checklist** — send all 14 queries from `docs/tasks/main/imessage-test-checklist.md`, verify 7 subcommands route correctly
-- [ ] **State of Mind XML key names** — do one Apple Health XML export, run `import-apple-health.py --debug` to confirm HKStateOfMindSample MetadataEntry key names
 
 ---
 
@@ -106,5 +104,4 @@
 
 ### Infrastructure
 
-- [ ] **Subspace** — macOS multi-agent GUI, install on Freedom. Quick.
 - [ ] **Sean Ryan feed** — `max_duration_seconds` filter for 5–7hr episodes that stay paused/skipped.
