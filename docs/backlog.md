@@ -1,6 +1,6 @@
 # IronClaw Project Backlog
 
-*Last updated: 2026-04-30. Update at end of each scope or evaluate session.*
+*Last updated: 2026-05-01. Update at end of each scope or evaluate session.*
 
 ---
 
@@ -8,11 +8,11 @@
 
 - ✅ Apple Health import pipeline (XML + Health Auto Export JSON + iOS automation)
 - ✅ HRV backfill — oura_daily.avg_hrv_rmssd populated (3138 rows)
-- ✅ State of Mind pillar — DB, importers, mood subcommand, agent wiring
-- ✅ sync-status subcommand
-- ✅ Migration framework tests (v0→v5)
+- ✅ State of Mind pillar — DB, importers, mood subcommand, agent wiring (JSON path confirmed working)
+- ✅ sync-status subcommand (verified via iMessage 2026-05-01)
+- ✅ Migration framework tests (v0→v6)
 - ✅ Source-priority dedup (get/set_last_synced consolidated, source guards)
-- ✅ Secrets rotation script (rotate-container-secrets.sh) — **script built, actual rotation not yet run**
+- ✅ Secrets rotation script (rotate-container-secrets.sh) — built; rotation not needed (credentials not exposed)
 - ✅ DB backup (backup-health-db.sh, daily launchd)
 - ✅ Daily Withings + Oura sync launchd plist
 - ✅ Evernote historical backfill (import-evernote-workouts.py)
@@ -20,6 +20,13 @@
 - ✅ Withings upsert source column bug fixed
 - ✅ oura-sync.py sync_tags dict.get bug fixed
 - ✅ Withings + Oura secrets moved to macOS Keychain
+- ✅ **Health DB Hardening Sprint (2026-05-01)**
+  - v6 migration: lab_results.in_range_flag, health_knowledge.enrichment_status + topics_text, FTS rebuild
+  - Units alias map (markers_canonical.json) + alias normalization in lab importer
+  - oura-sync: FetchError + per-chunk last_synced + mkdir lock guard + heartrate retention (90 days)
+  - DATA_CARD.md auto-generation (wired into daily-health-sync.sh)
+  - Rule 6c temporal classifier — default to now for bare-number body metric entries
+  - 273 tests passing; code review clean; pushed to origin/main
 
 ---
 
