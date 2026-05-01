@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Install: cp scripts/launchagents/com.ironclaw.ollama.plist ~/Library/LaunchAgents/
+     Load:    launchctl load ~/Library/LaunchAgents/com.ironclaw.ollama.plist -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ironclaw.ollama</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/ollama</string>
+        <string>serve</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>OLLAMA_NEW_ENGINE</key>
+        <string>true</string>
+        <key>HOME</key>
+        <string>/Users/jeff</string>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/jeff/Library/Logs/ironclaw/ollama.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/jeff/Library/Logs/ironclaw/ollama.log</string>
+</dict>
+</plist>
