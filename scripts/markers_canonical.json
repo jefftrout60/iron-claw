@@ -1,0 +1,111 @@
+{
+  "_comment": "Alias map for lab marker name normalization. Key = canonical name (as stored in lab_markers). Value = list of alternate names from other providers or common shorthand. Seeded 2026-05-01 from actual lab_markers.name values.",
+  "aliases": {
+    "Apolipoprotein A1 (mg/dL)": [
+      "Apolipoproteni A1 (mg/dL)",
+      "ApoA1 (mg/dL)",
+      "Apo A-I (mg/dL)",
+      "Apolipoprotein A-I (mg/dL)"
+    ],
+    "Apolipoprotein B (mg/dL)": [
+      "ApoB (mg/dL)",
+      "Apo B (mg/dL)",
+      "Apo B-100 (mg/dL)",
+      "Apolipoprotein B-100 (mg/dL)"
+    ],
+    "LDL Cholesterol Direct (mg/dL)": [
+      "LDL Cholesterol (mg/dL)",
+      "LDL-C (mg/dL)",
+      "LDL Direct (mg/dL)"
+    ],
+    "LDL-C Colc (mg/dL)": [
+      "LDL Cholesterol Calculated (mg/dL)",
+      "LDL-C Calc (mg/dL)",
+      "LDL Calc (mg/dL)"
+    ],
+    "Total Cholesterol (mg/dL)": [
+      "Cholesterol (mg/dL)",
+      "Cholesterol Total (mg/dL)",
+      "Total Chol (mg/dL)"
+    ],
+    "HDL Cholesterol (mg/dL)": [
+      "HDL (mg/dL)",
+      "HDL-C (mg/dL)",
+      "HDL Chol (mg/dL)"
+    ],
+    "Triglycerides (mg/dL)": [
+      "Triglyceride (mg/dL)",
+      "Trigs (mg/dL)",
+      "TG (mg/dL)"
+    ],
+    "Glucose (mg/dL)": [
+      "Blood Glucose (mg/dL)",
+      "Glucose Fasting (mg/dL)",
+      "Glucose, Serum (mg/dL)",
+      "Fasting Glucose (mg/dL)"
+    ],
+    "HbA1c (%)": [
+      "Hemoglobin A1c (%)",
+      "A1c (%)",
+      "Glycated Hemoglobin (%)",
+      "HgbA1c (%)"
+    ],
+    "hs-CRP (mg/L)": [
+      "C-Reactive Protein (mg/L)",
+      "CRP (mg/L)",
+      "hsCRP (mg/L)",
+      "High Sensitivity CRP (mg/L)"
+    ],
+    "TSH (µIU/mL)": [
+      "Thyroid Stimulating Hormone (µIU/mL)",
+      "TSH (uIU/mL)",
+      "TSH (mIU/L)"
+    ],
+    "Vitamin D 25-OH (pg/mL)": [
+      "25-OH Vitamin D (pg/mL)",
+      "Vitamin D, 25-Hydroxy (pg/mL)",
+      "25-Hydroxyvitamin D (pg/mL)"
+    ],
+    "ALT (U/L)": [
+      "Alanine Aminotransferase (U/L)",
+      "SGPT (U/L)",
+      "ALT/SGPT (U/L)"
+    ],
+    "AST (U/L)": [
+      "Aspartate Aminotransferase (U/L)",
+      "SGOT (U/L)",
+      "AST/SGOT (U/L)"
+    ],
+    "Creatinine (mg/dL)": [
+      "Creatinine, Serum (mg/dL)",
+      "Serum Creatinine (mg/dL)"
+    ],
+    "Ferritin (ng/mL)": [
+      "Ferritin, Serum (ng/mL)",
+      "Serum Ferritin (ng/mL)"
+    ],
+    "Total Testosterone (ng/dL)": [
+      "Testosterone Total (ng/dL)",
+      "Testosterone, Total (ng/dL)",
+      "Testosterone (ng/dL)"
+    ],
+    "Free Testosterone (pg/mL)": [
+      "Testosterone Free (pg/mL)",
+      "Testosterone, Free (pg/mL)"
+    ],
+    "DHEA-S (µg/dL)": [
+      "DHEA Sulfate (µg/dL)",
+      "DHEA-S (ug/dL)",
+      "DHEAS (µg/dL)"
+    ],
+    "Homocysteine (µmol/L)": [
+      "Homocysteine (umol/L)",
+      "Homocystiene (µmol/L)"
+    ],
+    "Lipoprotein(a) (nmol/L)": [
+      "Lp(a) (nmol/L)",
+      "Lp-a (nmol/L)",
+      "Lipoprotein a (nmol/L)"
+    ]
+  }
+}

@@ -1,20 +1,27 @@
 {
   "scope_mode": "commit_range",
-  "from_commit": "5db2752",
-  "to": "HEAD",
-  "date": "2026-04-29",
-  "files": [
-    "agents/sample-agent/workspace/AGENTS.md",
+  "commit_range": "6917392^..HEAD",
+  "sprint": "health-db-hardening",
+  "date": "2026-05-01",
+  "code_files": [
     "agents/sample-agent/workspace/health/health_db.py",
     "agents/sample-agent/workspace/health/health_query.py",
-    "agents/sample-agent/workspace/health/test_health_query.py",
-    "agents/sample-agent/workspace/health/test_withings_sync.py",
-    "agents/sample-agent/workspace/skills/health-query/SKILL.md",
-    "scripts/import-apple-health.py",
-    "scripts/import-evernote-workouts.py",
+    "agents/sample-agent/workspace/health/test_health_store.py",
+    "agents/sample-agent/workspace/health/test_migration_paths.py",
+    "agents/sample-agent/workspace/health/test_oura_sync.py",
+    "agents/sample-agent/workspace/skills/podcast-summary/scripts/health_store.py",
+    "scripts/daily-health-sync.sh",
+    "scripts/generate-data-card.py",
+    "scripts/import-blood-labs.py",
     "scripts/oura-sync.py",
-    "scripts/withings-auth.py",
-    "scripts/withings-sync.py"
+    "agents/sample-agent/workspace/AGENTS.md"
   ],
-  "untracked_data_files": ["bp_report_2026-01-01_2026-04-28.html", "export.xml", "workouts.enex"]
+  "untracked_planning_docs": [
+    "docs/tasks/main/clarifications/scope_clarifications_20260501105040.md",
+    "docs/tasks/main/concepts/scope_health_hardening_sprint.md",
+    "docs/tasks/main/reviews/health_db_hardening_code_review.md",
+    "docs/tasks/main/specs/plan_health_db_hardening_sprint.md",
+    "docs/tasks/main/specs/tasks_health_db_hardening_sprint.md",
+    "scripts/markers_canonical.json"
+  ]
 }
