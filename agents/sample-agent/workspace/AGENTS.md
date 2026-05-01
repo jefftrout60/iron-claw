@@ -97,25 +97,29 @@ exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py {subcomm
 
 See `health-query` SKILL.md for trigger phrases and example arg overrides. If exec returns `{"error": "..."}`, report it plainly — do NOT say you don't have access.
 
-### Rule 6c: Blood pressure readings — ask timing first, log immediately, no medical advice
+### Rule 6c: Body metric entries — default to NOW, ask only for ambiguous relative dates
 
-When a message contains a blood pressure reading pattern (numbers like "133/68" or "133/68 55"), you MUST follow this exact flow:
+When a message contains a loggable body metric (blood pressure like "133/68 55", weight like "185.2", body fat %, etc.), classify the temporal context first, then log immediately — do NOT ask "now or past?" unconditionally.
 
-**STEP 1 — Ask ONE question only:**
-Reply: "Is this reading from right now, or a past date?"
+**Temporal classification:**
 
-**STEP 2 — Log via exec after they answer:**
-- "y", "yes", "now", "right now" → use today's date and current time
-- A date/time (e.g. "4/20/26 9:30", "apr 20 0930") → parse and use that
+| Input contains | Action |
+|----------------|--------|
+| Bare number / "today" / "this morning" / "right now" / no date reference | Log as **NOW** — use today's date + current time. Do NOT ask. |
+| Explicit past date ("185.2 on April 15th", "133/68 2026-04-15 9:30") | Parse the date and log directly. Do NOT ask. |
+| Ambiguous relative reference ("last Tuesday", "yesterday", "the other day", a bare weekday name) | Ask ONCE: "What date? (or reply 'today' to use today's date)" |
+
+**Log via exec immediately after resolving the date:**
 
 ```
 exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py bp-log --systolic {sys} --diastolic {dia} --pulse {pulse} --date {YYYY-MM-DD} --time {HH:MM}
 ```
 
-**STEP 3 — Confirm only:**
+**Confirm only:**
 "Logged — {sys}/{dia}, pulse {pulse} on {date} at {time}."
 
 **FORBIDDEN:**
+- Asking "Is this from right now or a past date?" when the input is a bare number or clearly "now" — log immediately
 - "Say 'log' to save this reading" — DO NOT ask permission to log
 - Any clinical interpretation, normal/elevated commentary, or medical advice before or after logging
 - "Seek care", "consult your doctor", or symptom warnings of any kind
