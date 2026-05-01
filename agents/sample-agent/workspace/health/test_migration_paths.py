@@ -566,6 +566,203 @@ class TestComputeFlag(unittest.TestCase):
         """ref_low=None, ref_high=6.0, value=7.0: gap=1.0/6.0=16.7% > 10% → 'out'"""
         self.assertEqual(self._compute_flag(7.0, None, 6.0), 'out')
 
+    # ------------------------------------------------------------------
+    # NaN gap — verifies pd.isna() fix; reverts to 'in' if is not None used
+    # ------------------------------------------------------------------
+
+    def test_both_refs_nan_returns_none(self):
+        """
+        NaN refs must be treated as absent — returns None, not 'in'.
+
+        Mutation-resistant: if _compute_flag reverts to `is not None` checks,
+        NaN passes the guard (nan is not None == True) and all comparisons with
+        NaN return False, so the function falls through to return 'in'. This
+        test catches that regression.
+        """
+        result = self._compute_flag(5.0, float('nan'), float('nan'))
+        self.assertIsNone(result,
+            "NaN ref bounds must be treated as absent (None), not as a valid "
+            "range boundary. Got 'in' — pd.isna() guard is likely missing.")
+
+    def test_nan_low_real_high_value_within_high_returns_in(self):
+        """NaN ref_low with real ref_high=6.0: value=5.0 is below high → 'in'."""
+        result = self._compute_flag(5.0, float('nan'), 6.0)
+        self.assertEqual(result, 'in',
+            "NaN ref_low should be ignored; value below real ref_high → 'in'")
+
+    def test_nan_low_real_high_value_exceeds_returns_out(self):
+        """NaN ref_low with real ref_high=6.0: value=7.0 exceeds high → 'out'."""
+        result = self._compute_flag(7.0, float('nan'), 6.0)
+        self.assertEqual(result, 'out',
+            "NaN ref_low should be ignored; value well above real ref_high → 'out'")
+
+    def test_nan_refs_consistent_with_none_refs(self):
+        """
+        NaN and None refs must produce identical results — both mean 'no reference'.
+
+        This guards against a future implementation that handles the two cases
+        differently, which would be a semantic error.
+        """
+        nan = float('nan')
+        self.assertEqual(
+            self._compute_flag(5.0, None, None),
+            self._compute_flag(5.0, nan, nan),
+            "NaN refs must behave identically to None refs"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tests for _normalize_marker
+# ---------------------------------------------------------------------------
+
+class TestNormalizeMarker(unittest.TestCase):
+    """
+    Unit tests for _normalize_marker in scripts/import-blood-labs.py.
+
+    _normalize_marker(name: str) → str
+      Returns the canonical marker name from the alias map, or the original
+      name unchanged if no alias entry exists.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+        from pathlib import Path
+
+        script_path = Path(__file__).parent.parent.parent.parent.parent / "scripts" / "import-blood-labs.py"
+        spec = importlib.util.spec_from_file_location("import_blood_labs_nm", script_path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        cls._normalize_marker = staticmethod(mod._normalize_marker)
+
+    def test_known_alias_maps_to_canonical(self):
+        """
+        'ApoB (mg/dL)' is listed as an alias for 'Apolipoprotein B (mg/dL)'
+        in markers_canonical.json — must return the canonical form.
+        """
+        result = self._normalize_marker("ApoB (mg/dL)")
+        self.assertEqual(result, "Apolipoprotein B (mg/dL)",
+            "Known alias must be resolved to canonical name")
+
+    def test_second_alias_same_canonical(self):
+        """
+        'Apo B (mg/dL)' is a second alias for the same canonical; must also resolve.
+        """
+        result = self._normalize_marker("Apo B (mg/dL)")
+        self.assertEqual(result, "Apolipoprotein B (mg/dL)")
+
+    def test_alias_from_different_canonical(self):
+        """
+        'HDL-C (mg/dL)' → 'HDL Cholesterol (mg/dL)'.
+        Exercises a different alias group to confirm the map is fully loaded.
+        """
+        result = self._normalize_marker("HDL-C (mg/dL)")
+        self.assertEqual(result, "HDL Cholesterol (mg/dL)")
+
+    def test_unknown_name_returned_unchanged(self):
+        """A name not in any alias list is returned as-is."""
+        unknown = "Some Unknown Marker (units)"
+        result = self._normalize_marker(unknown)
+        self.assertEqual(result, unknown,
+            "Unknown marker name must be returned unchanged")
+
+    def test_canonical_name_itself_returned_unchanged(self):
+        """
+        The canonical name 'Apolipoprotein B (mg/dL)' is a key in the JSON,
+        not a value in any alias list — so it is not in _ALIAS_TO_CANONICAL
+        and must pass through untouched.
+        """
+        canonical = "Apolipoprotein B (mg/dL)"
+        result = self._normalize_marker(canonical)
+        self.assertEqual(result, canonical,
+            "Canonical name must pass through unchanged (it is a key, not an alias)")
+
+    def test_empty_string_returned_unchanged(self):
+        """Edge case: empty string has no alias entry → returned as-is."""
+        result = self._normalize_marker("")
+        self.assertEqual(result, "")
+
+
+# ---------------------------------------------------------------------------
+# Tests for _load_alias_map
+# ---------------------------------------------------------------------------
+
+class TestLoadAliasMap(unittest.TestCase):
+    """
+    Unit tests for _load_alias_map in scripts/import-blood-labs.py.
+
+    _load_alias_map() → dict
+      Reads markers_canonical.json next to the script and returns a flat
+      {alias: canonical} dict. Returns {} gracefully when the file is absent.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+        from pathlib import Path
+
+        script_path = Path(__file__).parent.parent.parent.parent.parent / "scripts" / "import-blood-labs.py"
+        spec = importlib.util.spec_from_file_location("import_blood_labs_lam", script_path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        cls._load_alias_map = staticmethod(mod._load_alias_map)
+        cls._script_path = script_path
+
+    def test_returns_dict(self):
+        """_load_alias_map must always return a dict, never None or another type."""
+        result = self._load_alias_map()
+        self.assertIsInstance(result, dict,
+            "_load_alias_map must return a dict")
+
+    def test_returns_non_empty_with_real_file(self):
+        """
+        With markers_canonical.json present next to the script, the map must
+        be non-empty and contain known alias entries.
+        """
+        result = self._load_alias_map()
+        self.assertGreater(len(result), 0,
+            "_load_alias_map should return a non-empty dict when markers_canonical.json exists")
+
+    def test_known_alias_present_in_map(self):
+        """'ApoB (mg/dL)' must map to 'Apolipoprotein B (mg/dL)' in the loaded map."""
+        result = self._load_alias_map()
+        self.assertIn("ApoB (mg/dL)", result,
+            "'ApoB (mg/dL)' must be a key in the alias map")
+        self.assertEqual(result["ApoB (mg/dL)"], "Apolipoprotein B (mg/dL)")
+
+    def test_values_are_strings(self):
+        """All values in the alias map must be strings (canonical names)."""
+        result = self._load_alias_map()
+        for alias, canonical in result.items():
+            self.assertIsInstance(canonical, str,
+                f"Canonical value for '{alias}' must be a str, got {type(canonical)}")
+
+    def test_missing_file_returns_empty_dict(self):
+        """
+        When called with a non-existent markers_canonical.json path, the
+        function must return {} rather than raising an exception.
+
+        We test this by temporarily monkey-patching the Path inside the
+        loaded module so open() sees a path that does not exist.
+        """
+        import importlib.util
+        from pathlib import Path
+        from unittest.mock import patch
+
+        # Reload the module under a fresh name so we can safely monkey-patch
+        script_path = self._script_path
+        spec = importlib.util.spec_from_file_location("import_blood_labs_missing", script_path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        # Patch open() inside the module's _load_alias_map to raise FileNotFoundError
+        with patch("builtins.open", side_effect=FileNotFoundError("mocked missing file")):
+            result = mod._load_alias_map()
+
+        self.assertEqual(result, {},
+            "_load_alias_map must return {} when markers_canonical.json is missing")
+        self.assertIsInstance(result, dict)
+
 
 if __name__ == "__main__":
     unittest.main()

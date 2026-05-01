@@ -924,6 +924,217 @@ class TestSyncStatus(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# classify_temporal tests  (Rule 6c)
+# ---------------------------------------------------------------------------
+
+class TestClassifyTemporal(unittest.TestCase):
+    """Tests for health_query.classify_temporal().
+
+    The function classifies user text to determine how to handle the date for a
+    body metric entry.  There is no DB dependency — no setUp/tearDown needed.
+    """
+
+    # --- 'now' cases ---
+
+    def test_bare_number_returns_now(self):
+        self.assertEqual(health_query.classify_temporal("185.2"), "now")
+
+    def test_bare_number_with_decimal_returns_now(self):
+        self.assertEqual(health_query.classify_temporal("12.5"), "now")
+
+    def test_word_today_returns_now(self):
+        self.assertEqual(health_query.classify_temporal("today"), "now")
+
+    def test_this_morning_returns_now(self):
+        self.assertEqual(health_query.classify_temporal("this morning"), "now")
+
+    def test_just_now_returns_now(self):
+        self.assertEqual(health_query.classify_temporal("just now"), "now")
+
+    def test_right_now_returns_now(self):
+        self.assertEqual(health_query.classify_temporal("right now"), "now")
+
+    def test_empty_string_returns_now(self):
+        # No temporal words at all — default is 'now'
+        self.assertEqual(health_query.classify_temporal(""), "now")
+
+    def test_no_temporal_words_returns_now(self):
+        # A plain reading with no date context defaults to now
+        self.assertEqual(health_query.classify_temporal("185.2 lbs"), "now")
+
+    # --- 'past_explicit' cases ---
+
+    def test_iso_date_embedded_returns_past_explicit(self):
+        self.assertEqual(health_query.classify_temporal("185.2 on 2026-04-15"), "past_explicit")
+
+    def test_bare_iso_date_returns_past_explicit(self):
+        self.assertEqual(health_query.classify_temporal("2026-04-15"), "past_explicit")
+
+    def test_named_month_with_ordinal_returns_past_explicit(self):
+        self.assertEqual(health_query.classify_temporal("April 15th"), "past_explicit")
+
+    def test_named_month_lowercase_returns_past_explicit(self):
+        self.assertEqual(health_query.classify_temporal("april 15"), "past_explicit")
+
+    def test_named_month_march_ordinal_returns_past_explicit(self):
+        self.assertEqual(health_query.classify_temporal("march 3rd"), "past_explicit")
+
+    def test_named_month_abbreviated_returns_past_explicit(self):
+        # Three-letter abbreviation without ordinal suffix
+        self.assertEqual(health_query.classify_temporal("jan 1"), "past_explicit")
+
+    def test_named_month_mixed_case_returns_past_explicit(self):
+        self.assertEqual(health_query.classify_temporal("April 15"), "past_explicit")
+
+    # --- 'ambiguous' cases ---
+
+    def test_yesterday_returns_ambiguous(self):
+        self.assertEqual(health_query.classify_temporal("yesterday"), "ambiguous")
+
+    def test_last_tuesday_returns_ambiguous(self):
+        self.assertEqual(health_query.classify_temporal("last Tuesday"), "ambiguous")
+
+    def test_last_week_returns_ambiguous(self):
+        self.assertEqual(health_query.classify_temporal("last week"), "ambiguous")
+
+    def test_the_other_day_returns_ambiguous(self):
+        self.assertEqual(health_query.classify_temporal("the other day"), "ambiguous")
+
+    def test_bare_weekday_monday_returns_ambiguous(self):
+        self.assertEqual(health_query.classify_temporal("Monday"), "ambiguous")
+
+    def test_bare_weekday_tuesday_returns_ambiguous(self):
+        self.assertEqual(health_query.classify_temporal("Tuesday"), "ambiguous")
+
+    def test_bare_weekday_friday_returns_ambiguous(self):
+        self.assertEqual(health_query.classify_temporal("Friday"), "ambiguous")
+
+    def test_a_few_days_ago_returns_ambiguous(self):
+        self.assertEqual(health_query.classify_temporal("a few days ago"), "ambiguous")
+
+    def test_earlier_this_week_returns_ambiguous(self):
+        self.assertEqual(health_query.classify_temporal("earlier this week"), "ambiguous")
+
+    # --- precedence: past_explicit wins over ambiguous ---
+
+    def test_explicit_date_with_weekday_context_returns_past_explicit(self):
+        # If the message contains both an ISO date and an ambiguous word the
+        # explicit date pattern is checked first and wins.
+        self.assertEqual(
+            health_query.classify_temporal("I weighed in on 2026-04-15 last Monday"),
+            "past_explicit",
+        )
+
+
+# ---------------------------------------------------------------------------
+# _parse_explicit_date tests  (Rule 6c)
+# ---------------------------------------------------------------------------
+
+class TestParseExplicitDate(unittest.TestCase):
+    """Tests for health_query._parse_explicit_date().
+
+    The function always returns a YYYY-MM-DD string — never a date object.
+    ISO dates are extracted verbatim.  Named month+day dates default to the
+    current year but roll back one year when the resulting date would be in
+    the future (relative to today).
+    """
+
+    # --- ISO extraction ---
+
+    def test_iso_date_embedded_in_text_returns_correct_string(self):
+        result = health_query._parse_explicit_date("185.2 on 2026-04-15")
+        self.assertEqual(result, "2026-04-15")
+
+    def test_bare_iso_date_returns_correct_string(self):
+        result = health_query._parse_explicit_date("2026-04-15")
+        self.assertEqual(result, "2026-04-15")
+
+    def test_iso_date_mid_sentence_returns_correct_string(self):
+        result = health_query._parse_explicit_date("I measured on 2025-12-31 after the gym")
+        self.assertEqual(result, "2025-12-31")
+
+    def test_iso_date_returns_string_not_date_object(self):
+        result = health_query._parse_explicit_date("2026-04-15")
+        self.assertIsInstance(result, str)
+        # Validate it is valid YYYY-MM-DD
+        from datetime import date
+        parsed = date.fromisoformat(result)
+        self.assertEqual(parsed.year, 2026)
+        self.assertEqual(parsed.month, 4)
+        self.assertEqual(parsed.day, 15)
+
+    # --- Named month+day extraction ---
+
+    def test_april_15th_returns_correct_month_and_day(self):
+        from datetime import date
+        result = health_query._parse_explicit_date("April 15th")
+        parsed = date.fromisoformat(result)
+        self.assertEqual(parsed.month, 4)
+        self.assertEqual(parsed.day, 15)
+
+    def test_march_3rd_returns_correct_month_and_day(self):
+        from datetime import date
+        result = health_query._parse_explicit_date("march 3rd")
+        parsed = date.fromisoformat(result)
+        self.assertEqual(parsed.month, 3)
+        self.assertEqual(parsed.day, 3)
+
+    def test_named_month_returns_string_not_date_object(self):
+        result = health_query._parse_explicit_date("April 15th")
+        self.assertIsInstance(result, str)
+
+    def test_named_month_result_is_valid_iso_format(self):
+        from datetime import date
+        result = health_query._parse_explicit_date("april 15")
+        # Must be parseable without raising
+        date.fromisoformat(result)
+
+    def test_future_named_month_rolls_back_to_prior_year(self):
+        # A month+day that is in the future relative to today must resolve to
+        # the prior year, not the current year.  We use the unittest.mock.patch
+        # approach so the test stays deterministic regardless of when it runs.
+        from unittest.mock import patch
+        from datetime import date
+        with patch("health_query.date") as mock_date:
+            # Fix "today" to 2026-05-01 so "May 15th" is clearly in the future
+            mock_date.today.return_value = date(2026, 5, 1)
+            mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+            result = health_query._parse_explicit_date("May 15th")
+        self.assertEqual(result, "2025-05-15")
+
+    def test_past_named_month_stays_in_current_year(self):
+        # A month+day that is not in the future must stay in the current year.
+        from unittest.mock import patch
+        from datetime import date
+        with patch("health_query.date") as mock_date:
+            mock_date.today.return_value = date(2026, 5, 1)
+            mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+            result = health_query._parse_explicit_date("April 15th")
+        self.assertEqual(result, "2026-04-15")
+
+    # --- Fallback to today ---
+
+    def test_no_date_in_text_returns_todays_date_string(self):
+        from datetime import date
+        result = health_query._parse_explicit_date("no date here at all")
+        self.assertEqual(result, date.today().isoformat())
+
+    def test_bare_number_no_date_falls_back_to_today(self):
+        from datetime import date
+        result = health_query._parse_explicit_date("185.2")
+        self.assertEqual(result, date.today().isoformat())
+
+    def test_empty_string_falls_back_to_today(self):
+        from datetime import date
+        result = health_query._parse_explicit_date("")
+        self.assertEqual(result, date.today().isoformat())
+
+    def test_fallback_returns_string_not_date_object(self):
+        result = health_query._parse_explicit_date("")
+        self.assertIsInstance(result, str)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
