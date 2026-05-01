@@ -20,4 +20,8 @@ $PYTHON "$REPO_ROOT/scripts/oura-sync.py"
 echo "--- Withings sync ---"
 $PYTHON "$REPO_ROOT/scripts/withings-sync.py"
 
+# Regenerate DATA_CARD.md so the agent sees fresh row counts and sync timestamps
+echo "--- Data card ---"
+$PYTHON "$REPO_ROOT/scripts/generate-data-card.py"
+
 echo "=== Health sync complete $(date) ==="

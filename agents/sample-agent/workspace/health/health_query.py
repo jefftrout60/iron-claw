@@ -8,6 +8,7 @@ Subcommands (all output JSON to stdout):
   search             --query TEXT [--limit N]
   blood-pressure     [--days N] [--start YYYY-MM-DD] [--end YYYY-MM-DD]
   body-metrics       [--days N] [--start YYYY-MM-DD] [--end YYYY-MM-DD]
+  body-log           --weight FLOAT [--fat FLOAT] [--text TEXT] [--date YYYY-MM-DD]
   activity           [--days N] [--start YYYY-MM-DD] [--end YYYY-MM-DD]
   workouts           [--days N] [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--type TYPE]
   workout-exercises  [--date YYYY-MM-DD | --days N]
@@ -22,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sqlite3
 import sys
 from datetime import date, timedelta
@@ -30,6 +32,77 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import health_db
 from bp_sessions import group_sessions
+
+
+# ---------------------------------------------------------------------------
+# Rule 6c — Temporal classifier for body-metrics write path
+# ---------------------------------------------------------------------------
+# Compiled at module level (not inside the function) for efficiency.
+
+# Explicit past dates: ISO format or named month + day
+_TEMPORAL_CLEAR_PAST = re.compile(
+    r'\b(\d{4}-\d{2}-\d{2}|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d+(?:st|nd|rd|th)?)\b',
+    re.IGNORECASE,
+)
+
+# Ambiguous relative references that require clarification
+_TEMPORAL_AMBIGUOUS = re.compile(
+    r'\b(yesterday|last\s+\w+|the\s+other\s+day|a\s+few\s+days?\s+ago|earlier\s+this\s+week'
+    r'|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b',
+    re.IGNORECASE,
+)
+
+
+def classify_temporal(text: str) -> str:
+    """Classify the temporal intent of a user message for date disambiguation.
+
+    Returns:
+      'past_explicit' — message contains a parseable past date (ISO or named month+day)
+      'ambiguous'     — message contains a relative reference requiring clarification
+      'now'           — default; bare numbers, 'today', 'this morning', 'just now', etc.
+    """
+    if _TEMPORAL_CLEAR_PAST.search(text):
+        return 'past_explicit'
+    if _TEMPORAL_AMBIGUOUS.search(text):
+        return 'ambiguous'
+    return 'now'
+
+
+def _parse_explicit_date(text: str) -> str:
+    """Extract and return the first explicit date from text as YYYY-MM-DD.
+
+    Handles ISO dates (2026-04-15) and named month+day patterns (April 15th, apr 15).
+    Falls back to today if parsing fails.
+    """
+    # Try ISO date first
+    iso_match = re.search(r'\b(\d{4}-\d{2}-\d{2})\b', text)
+    if iso_match:
+        return iso_match.group(1)
+
+    # Try named month + day (e.g. "April 15th", "apr 15", "march 3rd")
+    month_map = {
+        'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
+        'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12,
+    }
+    named_match = re.search(
+        r'\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+(\d+)(?:st|nd|rd|th)?\b',
+        text,
+        re.IGNORECASE,
+    )
+    if named_match:
+        month_num = month_map[named_match.group(1).lower()[:3]]
+        day_num = int(named_match.group(2))
+        try:
+            today = date.today()
+            # Assume current year; if the result is in the future, use prior year
+            candidate = date(today.year, month_num, day_num)
+            if candidate > today:
+                candidate = date(today.year - 1, month_num, day_num)
+            return candidate.isoformat()
+        except ValueError:
+            pass
+
+    return date.today().isoformat()
 
 
 def _out(data: dict) -> None:
@@ -239,6 +312,53 @@ def bp_log(systolic: int, diastolic: int, pulse: int | None,
         "systolic": systolic,
         "diastolic": diastolic,
         "pulse": pulse,
+    }
+
+
+# ---------------------------------------------------------------------------
+# body-log  (single reading insert for iMessage entry flow)
+# ---------------------------------------------------------------------------
+
+def body_log(weight_lbs: float | None, fat_ratio_pct: float | None,
+             text: str, explicit_date: str | None) -> dict:
+    """Insert a body-metrics reading, using Rule 6c to resolve the date.
+
+    date resolution:
+      explicit_date provided → use it directly (caller already resolved)
+      text classified 'now'          → date.today()
+      text classified 'past_explicit' → parse date from text
+      text classified 'ambiguous'    → return a clarification request, do not insert
+    """
+    if explicit_date:
+        resolved_date = explicit_date
+    else:
+        intent = classify_temporal(text)
+        if intent == 'now':
+            resolved_date = date.today().isoformat()
+        elif intent == 'past_explicit':
+            resolved_date = _parse_explicit_date(text)
+        else:  # ambiguous
+            return {
+                "needs_clarification": True,
+                "question": "What date? (or reply 'today' to use today's date)",
+            }
+
+    conn = health_db.get_connection()
+    conn.execute(
+        """INSERT INTO body_metrics
+               (date, weight_lbs, fat_ratio_pct, source)
+               VALUES (?, ?, ?, 'imessage')
+               ON CONFLICT(date, time) DO UPDATE SET
+                 weight_lbs    = excluded.weight_lbs,
+                 fat_ratio_pct = excluded.fat_ratio_pct""",
+        (resolved_date, weight_lbs, fat_ratio_pct),
+    )
+    conn.commit()
+    return {
+        "logged": True,
+        "date": resolved_date,
+        "weight_lbs": weight_lbs,
+        "fat_ratio_pct": fat_ratio_pct,
     }
 
 
@@ -712,6 +832,16 @@ def main() -> None:
     lg.add_argument("--time", dest="reading_time", required=True, help="HH:MM")
     lg.add_argument("--notes", default=None)
 
+    bl = sub.add_parser("body-log", help="Log a single body-metrics reading (Rule 6c date resolution)")
+    bl.add_argument("--weight", dest="weight_lbs", type=float, default=None,
+                    help="Weight in lbs")
+    bl.add_argument("--fat", dest="fat_ratio_pct", type=float, default=None,
+                    help="Body fat percentage")
+    bl.add_argument("--text", default="",
+                    help="Original user message (used for temporal classification)")
+    bl.add_argument("--date", dest="explicit_date", default=None,
+                    help="Explicit date YYYY-MM-DD (skips temporal classification)")
+
     bm = sub.add_parser("body-metrics", help="Body composition trend (weight, fat, lean mass)")
     bm.add_argument("--days", type=int, default=90)
     bm.add_argument("--start", help="Start date YYYY-MM-DD (overrides --days)")
@@ -764,6 +894,9 @@ def main() -> None:
     elif args.command == "bp-log":
         result = bp_log(args.systolic, args.diastolic, args.pulse,
                         args.reading_date, args.reading_time, args.notes)
+    elif args.command == "body-log":
+        result = body_log(args.weight_lbs, args.fat_ratio_pct,
+                          args.text, args.explicit_date)
     elif args.command == "body-metrics":
         result = body_metrics_query(args.days, args.start, args.end)
     elif args.command == "activity":
