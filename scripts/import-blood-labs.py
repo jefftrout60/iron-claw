@@ -228,8 +228,8 @@ def run(filepath: str, dry_run: bool) -> None:
         ).fetchone()
         marker_id = marker_row[0]
 
-        ref_low = row["reference_low"] if row["reference_low"] is not None else None
-        ref_high = row["reference_high"] if row["reference_high"] is not None else None
+        ref_low = None if pd.isna(row["reference_low"]) else row["reference_low"]
+        ref_high = None if pd.isna(row["reference_high"]) else row["reference_high"]
         value = row["value"]
         flag = _compute_flag(value, ref_low, ref_high)
 
