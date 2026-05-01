@@ -3,10 +3,10 @@
 Tests for health_db schema migration paths.
 
 Verifies that initialize_schema correctly upgrades a DB from any prior version
-to the current SCHEMA_VERSION (5), and that all column patches are idempotent.
+to the current SCHEMA_VERSION (6), and that all column patches are idempotent.
 
 Strategy for incremental-path tests:
-  1. Open an in-memory DB and call initialize_schema → reaches v5.
+  1. Open an in-memory DB and call initialize_schema → reaches v6.
   2. Stamp the DB back to version N with PRAGMA user_version = N.
   3. Drop tables that were added in versions > N.
   4. Call initialize_schema again — it must apply only the missing migrations.
@@ -34,8 +34,8 @@ _TABLES_ADDED_BY_VERSION = {
     2: ["body_metrics"],
 }
 
-# All tables expected in a fully-migrated v5 DB
-_ALL_V5_TABLES = {
+# All tables expected in a fully-migrated v6 DB
+_ALL_V6_TABLES = {
     # v1 base tables
     "health_knowledge",
     "lab_markers",
@@ -55,6 +55,7 @@ _ALL_V5_TABLES = {
     "oura_tags",
     # v5
     "state_of_mind",
+    # v6: no new tables — only new columns + FTS rebuild
 }
 
 
@@ -71,7 +72,7 @@ def _conn_at_version(n: int) -> sqlite3.Connection:
     Return an in-memory DB that looks like it was last migrated to version N.
 
     Steps:
-      1. Create in-memory DB, run initialize_schema → reaches v5.
+      1. Create in-memory DB, run initialize_schema → reaches v6.
       2. Stamp version down to N.
       3. Drop tables introduced in versions > N so the DB truly resembles a v-N DB.
     """
@@ -100,28 +101,28 @@ def _conn_at_version(n: int) -> sqlite3.Connection:
 # Tests
 # ---------------------------------------------------------------------------
 
-class TestFreshDBReachesV5(unittest.TestCase):
-    """An empty in-memory DB must reach version 5 with all tables present."""
+class TestFreshDBReachesV6(unittest.TestCase):
+    """An empty in-memory DB must reach version 6 with all tables present."""
 
-    def test_fresh_db_reaches_v5(self):
+    def test_fresh_db_reaches_v6(self):
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
         health_db.initialize_schema(conn)
 
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         self.assertEqual(version, health_db.SCHEMA_VERSION)
-        self.assertEqual(version, 5)
+        self.assertEqual(version, 6)
 
         tables = _list_tables(conn)
         # Every table including state_of_mind must exist
-        for table in _ALL_V5_TABLES:
+        for table in _ALL_V6_TABLES:
             self.assertIn(table, tables, f"Missing table after fresh init: {table}")
 
 
-class TestV2ToV5(unittest.TestCase):
-    """A v2 DB (has body_metrics, missing v3-v5 tables) must upgrade to v5."""
+class TestV2ToV6(unittest.TestCase):
+    """A v2 DB (has body_metrics, missing v3-v6 tables) must upgrade to v6."""
 
-    def test_v2_to_v5(self):
+    def test_v2_to_v6(self):
         conn = _conn_at_version(2)
 
         # Confirm the setup looks like v2: body_metrics present, v3+ absent
@@ -135,18 +136,18 @@ class TestV2ToV5(unittest.TestCase):
         health_db.initialize_schema(conn)
 
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        self.assertEqual(version, 5)
+        self.assertEqual(version, 6)
 
         tables_after = _list_tables(conn)
         for table in ["workout_exercises", "oura_tags", "state_of_mind"]:
             self.assertIn(table, tables_after,
-                          f"Missing table after v2→v5 migration: {table}")
+                          f"Missing table after v2→v6 migration: {table}")
 
 
-class TestV3ToV5(unittest.TestCase):
-    """A v3 DB (has activity_daily/workouts, missing v4-v5 tables) must upgrade to v5."""
+class TestV3ToV6(unittest.TestCase):
+    """A v3 DB (has activity_daily/workouts, missing v4-v6 tables) must upgrade to v6."""
 
-    def test_v3_to_v5(self):
+    def test_v3_to_v6(self):
         conn = _conn_at_version(3)
 
         tables_before = _list_tables(conn)
@@ -159,18 +160,18 @@ class TestV3ToV5(unittest.TestCase):
         health_db.initialize_schema(conn)
 
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        self.assertEqual(version, 5)
+        self.assertEqual(version, 6)
 
         tables_after = _list_tables(conn)
         for table in ["workout_exercises", "oura_tags", "state_of_mind"]:
             self.assertIn(table, tables_after,
-                          f"Missing table after v3→v5 migration: {table}")
+                          f"Missing table after v3→v6 migration: {table}")
 
 
-class TestV4ToV5(unittest.TestCase):
-    """A v4 DB (has workout_exercises/oura_tags, missing state_of_mind) must upgrade to v5."""
+class TestV4ToV6(unittest.TestCase):
+    """A v4 DB (has workout_exercises/oura_tags, missing state_of_mind) must upgrade to v6."""
 
-    def test_v4_to_v5(self):
+    def test_v4_to_v6(self):
         conn = _conn_at_version(4)
 
         tables_before = _list_tables(conn)
@@ -182,15 +183,15 @@ class TestV4ToV5(unittest.TestCase):
         health_db.initialize_schema(conn)
 
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        self.assertEqual(version, 5)
+        self.assertEqual(version, 6)
 
         tables_after = _list_tables(conn)
         self.assertIn("state_of_mind", tables_after,
-                      "Missing state_of_mind after v4→v5 migration")
+                      "Missing state_of_mind after v4→v6 migration")
 
 
 class TestIdempotentColumnPatches(unittest.TestCase):
-    """Calling initialize_schema twice on a v5 DB must not raise any error."""
+    """Calling initialize_schema twice on a v6 DB must not raise any error."""
 
     def test_idempotent_column_patches(self):
         conn = sqlite3.connect(":memory:")
@@ -205,7 +206,7 @@ class TestIdempotentColumnPatches(unittest.TestCase):
             self.fail(f"initialize_schema raised on second call: {exc}")
 
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        self.assertEqual(version, 5)
+        self.assertEqual(version, 6)
 
 
 class TestSyncHelpersAvailable(unittest.TestCase):

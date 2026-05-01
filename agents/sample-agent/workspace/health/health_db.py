@@ -51,7 +51,7 @@ def get_connection(db_path: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 def initialize_schema(conn: sqlite3.Connection) -> None:
@@ -404,6 +404,85 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         conn.execute("PRAGMA user_version = 5")
         conn.commit()
         _version = 5
+
+    # ---------- v6: in_range_flag, enrichment_status, topics_text + FTS rebuild --
+    if _version < 6:
+        # executescript cannot guard against duplicate column errors, so use
+        # individual try/except calls — same pattern as canonical_unit above
+        for _stmt in [
+            "ALTER TABLE lab_results ADD COLUMN in_range_flag TEXT",
+            "ALTER TABLE health_knowledge ADD COLUMN enrichment_status TEXT",
+            "ALTER TABLE health_knowledge ADD COLUMN topics_text TEXT",
+        ]:
+            try:
+                conn.execute(_stmt)
+            except sqlite3.OperationalError:
+                pass
+        # Rebuild FTS to include topics_text as third indexed column
+        conn.executescript("""
+            DROP TABLE IF EXISTS health_knowledge_fts;
+            CREATE VIRTUAL TABLE health_knowledge_fts USING fts5(
+                episode_title, summary, topics_text,
+                content='health_knowledge', content_rowid='rowid',
+                tokenize='porter unicode61'
+            );
+            DROP TRIGGER IF EXISTS hk_ai;
+            DROP TRIGGER IF EXISTS hk_ad;
+            DROP TRIGGER IF EXISTS hk_au;
+        """)
+        # Recreate triggers with 3 columns — each trigger uses conn.execute()
+        # because executescript misparses trigger bodies that contain semicolons
+        conn.execute("""CREATE TRIGGER IF NOT EXISTS hk_ai AFTER INSERT ON health_knowledge BEGIN
+            INSERT INTO health_knowledge_fts(rowid, episode_title, summary, topics_text)
+            VALUES (new.rowid, new.episode_title, new.summary, COALESCE(new.topics_text, ''));
+        END""")
+        conn.execute("""CREATE TRIGGER IF NOT EXISTS hk_ad AFTER DELETE ON health_knowledge BEGIN
+            INSERT INTO health_knowledge_fts(health_knowledge_fts, rowid, episode_title, summary, topics_text)
+            VALUES ('delete', old.rowid, old.episode_title, old.summary, COALESCE(old.topics_text, ''));
+        END""")
+        conn.execute("""CREATE TRIGGER IF NOT EXISTS hk_au AFTER UPDATE ON health_knowledge BEGIN
+            INSERT INTO health_knowledge_fts(health_knowledge_fts, rowid, episode_title, summary, topics_text)
+            VALUES ('delete', old.rowid, old.episode_title, old.summary, COALESCE(old.topics_text, ''));
+            INSERT INTO health_knowledge_fts(rowid, episode_title, summary, topics_text)
+            VALUES (new.rowid, new.episode_title, new.summary, COALESCE(new.topics_text, ''));
+        END""")
+        # Repopulate FTS from base table (required after DROP + recreate)
+        conn.execute("""
+            INSERT INTO health_knowledge_fts(rowid, episode_title, summary, topics_text)
+            SELECT rowid, episode_title, summary, COALESCE(topics_text, '')
+            FROM health_knowledge
+        """)
+        # Backfill enrichment_status from existing topics data
+        conn.execute("""
+            UPDATE health_knowledge
+            SET enrichment_status = CASE
+                WHEN topics IS NOT NULL AND topics != '[]' THEN 'done'
+                ELSE 'pending'
+            END
+            WHERE enrichment_status IS NULL
+        """)
+        conn.execute("PRAGMA user_version = 6")
+        conn.commit()
+        _version = 6
+
+    # Backfill topics_text for rows that have topics JSON but no topics_text yet.
+    # Must run after the v6 migration block so the column exists.
+    import json as _json
+    _rows = conn.execute(
+        "SELECT rowid, topics FROM health_knowledge WHERE topics_text IS NULL AND topics IS NOT NULL"
+    ).fetchall()
+    for _row in _rows:
+        try:
+            _tags = _json.loads(_row[1])
+            _topics_text = ' '.join(_tags) if isinstance(_tags, list) else ''
+        except Exception:
+            _topics_text = ''
+        conn.execute(
+            "UPDATE health_knowledge SET topics_text = ? WHERE rowid = ?",
+            (_topics_text, _row[0]),
+        )
+    if _rows:
+        conn.commit()
 
 
 # ---------------------------------------------------------------------------
