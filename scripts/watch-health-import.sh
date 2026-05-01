@@ -6,13 +6,13 @@
 AUTO_EXPORT_DIR="$HOME/Library/Mobile Documents/com~apple~CloudDocs/Auto Export"
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 LOG="$HOME/Library/Logs/ironclaw/health-watch.log"
-LOCK="$HOME/Library/Logs/ironclaw/.health-watch.lock"
+LOCKDIR="$HOME/Library/Logs/ironclaw/.health-watch.lock"
 
 mkdir -p "$(dirname "$LOG")"
 
-# Prevent overlapping runs (e.g. if a large import takes >5 min)
-exec 9>"$LOCK"
-flock -n 9 || exit 0
+# Prevent overlapping runs — mkdir is atomic on macOS (flock not available)
+mkdir "$LOCKDIR" 2>/dev/null || exit 0
+trap 'rmdir "$LOCKDIR"' EXIT
 
 for WATCH_DIR in "$AUTO_EXPORT_DIR/Health DB export" "$AUTO_EXPORT_DIR/State of Mind"; do
     ARCHIVE_DIR="$HOME/Library/Logs/ironclaw/health-archive/$(basename "$WATCH_DIR")"
