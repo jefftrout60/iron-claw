@@ -15,6 +15,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json as _json
+import pathlib as _pathlib
 import re
 import sys
 from pathlib import Path
@@ -24,6 +26,45 @@ _REPO_ROOT = Path(__file__).parent.parent
 _HEALTH_DIR = _REPO_ROOT / "agents/sample-agent/workspace/health"
 sys.path.insert(0, str(_HEALTH_DIR))
 import health_db
+
+
+# ---------------------------------------------------------------------------
+# Task 4.2 — Alias lookup for marker names
+# ---------------------------------------------------------------------------
+
+def _load_alias_map():
+    path = _pathlib.Path(__file__).parent / "markers_canonical.json"
+    try:
+        data = _json.load(open(path))
+        return {alias: canon for canon, aliases in data["aliases"].items() for alias in aliases}
+    except (FileNotFoundError, KeyError):
+        print("WARNING: markers_canonical.json not found or malformed; proceeding without alias normalization",
+              file=sys.stderr)
+        return {}
+
+_ALIAS_TO_CANONICAL = _load_alias_map()
+
+
+def _normalize_marker(name: str) -> str:
+    """Return the canonical marker name, or the original name if no alias matches."""
+    return _ALIAS_TO_CANONICAL.get(name, name)
+
+
+# ---------------------------------------------------------------------------
+# Task 3.2 — Reference-range flagging
+# ---------------------------------------------------------------------------
+
+_BORDERLINE_PCT = 0.10
+
+
+def _compute_flag(value, ref_low, ref_high):
+    if ref_low is None and ref_high is None:
+        return None
+    if ref_low is not None and value < ref_low:
+        return 'borderline' if (ref_low - value) / ref_low <= _BORDERLINE_PCT else 'out'
+    if ref_high is not None and value > ref_high:
+        return 'borderline' if (value - ref_high) / ref_high <= _BORDERLINE_PCT else 'out'
+    return 'in'
 
 
 def parse_reference_range(ref_str) -> tuple[float | None, float | None]:
@@ -164,8 +205,12 @@ def run(filepath: str, dry_run: bool) -> None:
     for _, row in combined.iterrows():
         # Extract unit from marker name if embedded in parentheses at end
         # e.g. "Glucose (mg/dL)" → "mg/dL"; "HbA1c (%)" → "%"
-        unit_match = re.search(r'\(([^)]+)\)\s*$', str(row["marker_name"]).strip())
+        raw_name = str(row["marker_name"]).strip()
+        unit_match = re.search(r'\(([^)]+)\)\s*$', raw_name)
         canonical_unit = unit_match.group(1) if unit_match else None
+
+        # Normalize marker name through alias map (Task 4.2)
+        marker_name = _normalize_marker(raw_name)
 
         # Upsert marker — set canonical_unit if we can parse it
         conn.execute(
@@ -173,33 +218,40 @@ def run(filepath: str, dry_run: bool) -> None:
                VALUES (?, ?)
                ON CONFLICT(name) DO UPDATE SET
                  canonical_unit = COALESCE(excluded.canonical_unit, lab_markers.canonical_unit)""",
-            (row["marker_name"], canonical_unit),
+            (marker_name, canonical_unit),
         )
         marker_row = conn.execute(
-            "SELECT id FROM lab_markers WHERE name = ?", (row["marker_name"],)
+            "SELECT id FROM lab_markers WHERE name = ?", (marker_name,)
         ).fetchone()
         marker_id = marker_row[0]
+
+        ref_low = row["reference_low"] if row["reference_low"] is not None else None
+        ref_high = row["reference_high"] if row["reference_high"] is not None else None
+        value = row["value"]
+        flag = _compute_flag(value, ref_low, ref_high)
 
         # Upsert result — preserve imported_at and id on re-import
         cursor = conn.execute(
             """INSERT INTO lab_results
-                 (marker_id, date, value, reference_low, reference_high, source_sheet)
-               VALUES (?, ?, ?, ?, ?, ?)
+                 (marker_id, date, value, reference_low, reference_high, source_sheet, in_range_flag)
+               VALUES (?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(marker_id, date) DO UPDATE SET
                  value          = excluded.value,
                  reference_low  = excluded.reference_low,
                  reference_high = excluded.reference_high,
-                 source_sheet   = excluded.source_sheet
+                 source_sheet   = excluded.source_sheet,
+                 in_range_flag  = excluded.in_range_flag
                WHERE lab_results.value IS NOT excluded.value
                   OR lab_results.reference_low IS NOT excluded.reference_low
                   OR lab_results.reference_high IS NOT excluded.reference_high""",
             (
                 marker_id,
                 row["date"],
-                row["value"],
-                row["reference_low"] if row["reference_low"] is not None else None,
-                row["reference_high"] if row["reference_high"] is not None else None,
+                value,
+                ref_low,
+                ref_high,
                 row["source_sheet"],
+                flag,
             ),
         )
         if cursor.rowcount > 0:
