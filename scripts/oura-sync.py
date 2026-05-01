@@ -23,6 +23,39 @@ from pathlib import Path
 
 import requests
 
+# ---------------------------------------------------------------------------
+# Error types
+# ---------------------------------------------------------------------------
+
+class FetchError(Exception):
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Single-instance lock guard (mkdir is atomic on macOS; flock unavailable)
+# ---------------------------------------------------------------------------
+
+_LOCK_DIR = os.path.expanduser("~/Library/Logs/ironclaw/.oura-sync.lock")
+
+_HEARTRATE_RETENTION_DAYS = 90
+
+
+def _acquire_lock():
+    os.makedirs(os.path.dirname(_LOCK_DIR), exist_ok=True)
+    try:
+        os.mkdir(_LOCK_DIR)
+    except OSError:
+        print("oura-sync: another instance is running, exiting", file=sys.stderr)
+        sys.exit(0)
+
+
+def _release_lock():
+    try:
+        os.rmdir(_LOCK_DIR)
+    except OSError:
+        pass
+
+
 # health_db lives in workspace/health/
 _REPO_ROOT = Path(__file__).parent.parent
 _HEALTH_DIR = _REPO_ROOT / "agents/sample-agent/workspace/health"
@@ -95,7 +128,7 @@ def fetch_all(resource: str, start_date: str, end_date: str, headers: dict) -> l
             resp = requests.get(url, headers=headers, params=params, timeout=30)
         except requests.RequestException as e:
             log.warning("Network error fetching %s: %s", resource, e)
-            break
+            raise FetchError(f"network error fetching {resource}: {e}") from e
 
         if resp.status_code == 404:
             log.warning("Endpoint %s returned 404 — skipping (Gen3-only or unavailable)", resource)
@@ -107,10 +140,10 @@ def fetch_all(resource: str, start_date: str, end_date: str, headers: dict) -> l
                 resp = requests.get(url, headers=headers, params=params, timeout=30)
             except requests.RequestException as e:
                 log.warning("Retry failed for %s: %s", resource, e)
-                break
+                raise FetchError(f"network error fetching {resource}: {e}") from e
         if resp.status_code != 200:
             log.warning("HTTP %s for %s — skipping chunk", resp.status_code, resource)
-            break
+            raise FetchError(f"HTTP {resp.status_code} for {resource} chunk {params.get('start_date', '?')}–{params.get('end_date', '?')}")
 
         body = resp.json()
         batch = body.get("data", [])
@@ -134,6 +167,17 @@ def date_chunks(start: str, end: str, days: int = 90) -> list[tuple[str, str]]:
         chunks.append((cur.isoformat(), chunk_end.isoformat()))
         cur = chunk_end + timedelta(days=1)
     return chunks
+
+
+# ---------------------------------------------------------------------------
+# Heartrate retention cleanup
+# ---------------------------------------------------------------------------
+
+def cleanup_old_heartrate(conn):
+    from datetime import date, timedelta
+    cutoff = (date.today() - timedelta(days=_HEARTRATE_RETENTION_DAYS)).isoformat()
+    conn.execute("DELETE FROM oura_heartrate WHERE timestamp < ?", (cutoff,))
+    conn.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -290,6 +334,7 @@ def sync_heartrate(conn, headers: dict, start: str, end: str) -> None:
     log.info("Upserted %d heart rate rows", count)
     health_db.set_last_synced(conn, "heartrate",
                               (date.fromisoformat(end) - timedelta(days=OVERLAP_DAYS)).isoformat())
+    cleanup_old_heartrate(conn)
 
 
 def sync_tags(conn, headers: dict, start: str, end: str) -> None:
@@ -370,4 +415,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    _acquire_lock()
+    try:
+        main()
+    finally:
+        _release_lock()
