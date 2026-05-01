@@ -61,8 +61,12 @@ def _compute_flag(value, ref_low, ref_high):
     if ref_low is None and ref_high is None:
         return None
     if ref_low is not None and value < ref_low:
+        if ref_low == 0:
+            return 'out'
         return 'borderline' if (ref_low - value) / ref_low <= _BORDERLINE_PCT else 'out'
     if ref_high is not None and value > ref_high:
+        if ref_high == 0:
+            return 'out'
         return 'borderline' if (value - ref_high) / ref_high <= _BORDERLINE_PCT else 'out'
     return 'in'
 

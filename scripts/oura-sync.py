@@ -366,8 +366,8 @@ def sync_heartrate(conn, headers: dict, start: str, end: str) -> None:
     if last_good_date:
         safe_date = (date.fromisoformat(last_good_date) - timedelta(days=OVERLAP_DAYS)).isoformat()
         health_db.set_last_synced(conn, "heartrate", safe_date)
-    # If last_good_date is None: no chunks succeeded; don't advance last_synced
-    cleanup_old_heartrate(conn)
+        cleanup_old_heartrate(conn)
+    # If last_good_date is None: no chunks succeeded; don't advance last_synced or clean up
 
 
 def sync_tags(conn, headers: dict, start: str, end: str) -> None:
