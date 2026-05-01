@@ -174,7 +174,6 @@ def date_chunks(start: str, end: str, days: int = 90) -> list[tuple[str, str]]:
 # ---------------------------------------------------------------------------
 
 def cleanup_old_heartrate(conn):
-    from datetime import date, timedelta
     cutoff = (date.today() - timedelta(days=_HEARTRATE_RETENTION_DAYS)).isoformat()
     conn.execute("DELETE FROM oura_heartrate WHERE timestamp < ?", (cutoff,))
     conn.commit()

@@ -15,8 +15,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json as _json
-import pathlib as _pathlib
+import json
 import re
 import sys
 from pathlib import Path
@@ -33,9 +32,9 @@ import health_db
 # ---------------------------------------------------------------------------
 
 def _load_alias_map():
-    path = _pathlib.Path(__file__).parent / "markers_canonical.json"
+    path = Path(__file__).parent / "markers_canonical.json"
     try:
-        data = _json.load(open(path))
+        data = json.load(open(path))
         return {alias: canon for canon, aliases in data["aliases"].items() for alias in aliases}
     except (FileNotFoundError, KeyError):
         print("WARNING: markers_canonical.json not found or malformed; proceeding without alias normalization",

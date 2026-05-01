@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
 import re
@@ -136,35 +135,3 @@ def append_entry(entry_data: dict, api_key: str = "", model: str = "gpt-4o-mini"
     conn.close()
     return entry
 
-
-def load_all() -> list[dict]:
-    """Return all entries sorted by date descending (newest first)."""
-    conn = health_db.get_connection()
-    rows = conn.execute("SELECT * FROM health_knowledge ORDER BY date DESC").fetchall()
-    conn.close()
-    result = []
-    for row in rows:
-        d = dict(row)
-        d["topics"] = json.loads(d.get("topics") or "[]")
-        result.append(d)
-    return result
-
-
-
-def _cli_test() -> None:
-    entries = load_all()
-    print(f"health_knowledge (SQLite) — {len(entries)} entry(s)")
-    if entries:
-        print("First entry:")
-        print(json.dumps(entries[0], indent=2))
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Health knowledge store CLI")
-    parser.add_argument("--test", action="store_true", help="Print current contents of health knowledge DB")
-    args = parser.parse_args()
-
-    if args.test:
-        _cli_test()
-    else:
-        parser.print_help()

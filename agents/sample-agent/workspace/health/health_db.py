@@ -65,6 +65,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
       2 → 3 : activity_daily, workouts
       3 → 4 : workout_exercises, oura_tags
       4 → 5 : state_of_mind
+      5 → 6 : lab_results.in_range_flag, health_knowledge.enrichment_status + topics_text, FTS rebuild
     """
     _version = conn.execute("PRAGMA user_version").fetchone()[0]
     # ---------- health_knowledge ----------------------------------------
