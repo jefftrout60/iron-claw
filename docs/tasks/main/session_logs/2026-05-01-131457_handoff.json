@@ -1,0 +1,87 @@
+{
+  "version": "1.1",
+  "timestamp": "2026-05-01-131457",
+  "branch_name": "main",
+  "task_name": "Health DB Hardening Sprint — Complete",
+  "session_number": 13,
+  "continuity": {
+    "started": "2026-04-26",
+    "sessions_reviewed": 3,
+    "arc_goal": "Personal health intelligence via iMessage: automated daily sync of all health pillars (Withings, Oura, Apple Health via Health Auto Export, Evernote, State of Mind) into health.db, with agent answering cross-pillar correlation queries (HRV vs workout intensity, BP vs sleep, body fat% vs BP trend, sauna tags vs recovery metrics)."
+  },
+  "progress_update": {
+    "summary": "We completed the full Health DB Hardening Sprint. Shipped 13 code items across DB integrity, sync reliability, search quality, observability, and agent behavior — all committed to origin/main. 273 tests passing. Ran code review, clean pass, and test coverage expansion. Sprint is closed.",
+    "goal": "Personal health intelligence via iMessage: automated daily sync of all health pillars into health.db, with agent answering cross-pillar correlation queries. This sprint: harden the DB before building daily_brief and correlation queries.",
+    "accomplished": [
+      "v6 DB migration: added lab_results.in_range_flag, health_knowledge.enrichment_status + topics_text, rebuilt FTS5 index to include topics_text with updated triggers and backfill",
+      "Units alias map (scripts/markers_canonical.json, 21 alias groups) seeded from live DB + normalized marker names in import-blood-labs.py",
+      "oura-sync.py hardened: FetchError on HTTP/network failure, per-chunk last_synced advance (only advances to confirmed data), mkdir single-instance lock guard, 90-day heartrate retention",
+      "DATA_CARD.md auto-generation script (scripts/generate-data-card.py) wired into daily-health-sync.sh",
+      "Rule 6c temporal classifier in health_query.py + body-log subcommand: bare numbers default to now, only asks for ambiguous relative dates",
+      "Code review found and fixed 2 HIGH issues: cleanup_old_heartrate now only runs on success; _compute_flag uses math.isnan() for NaN-safe reference bounds",
+      "Clean pass: removed 38 lines of dead dev scaffolding from health_store.py, redundant imports from oura-sync.py and import-blood-labs.py",
+      "273 tests passing (up from 195 at sprint start); added tests for classify_temporal, _compute_flag NaN, _normalize_marker alias lookup",
+      "sync-status subcommand verified working via iMessage 2026-05-01",
+      "backlog.md updated to reflect sprint completion; pushed to origin/main"
+    ],
+    "now": "Sprint fully complete and pushed. Backlog updated. Ready to scope next sprint.",
+    "next_steps": [
+      "daily_brief(day) query — killer-app: Oura sleep/HRV + out-of-range labs + matching health_knowledge episodes in one call",
+      "Correlations view — pre-baked SQL joining lab_results to oura_daily windowed by date",
+      "Trends snapshot job — daily cron computing 7d/30d/90d deltas per lab marker into lab_trends table",
+      "avg_hrv_rmssd trend query — new health_query.py subcommand (column is populated)",
+      "iMessage manual test checklist — 14 queries to verify all subcommands route correctly (Jeff running manually)"
+    ],
+    "confidence": "high",
+    "constraints": [
+      "health.db at schema version 6 — next change requires v7 migration block",
+      "State of Mind JSON path confirmed working (1 record 2026-04-30); XML import path unused",
+      "Health Auto Export JSON schema confirmed for step_count, time_in_daylight, state_of_mind",
+      "Withings/Oura tokens in macOS Keychain; container secrets (OpenAI, Telegram, Gmail) in .env — not rotated (not needed)",
+      "oura_heartrate retention set to 90 days (_HEARTRATE_RETENTION_DAYS constant in oura-sync.py)",
+      "Borderline threshold for in_range_flag = 10% of boundary value (_BORDERLINE_PCT constant)",
+      "Telegram kept as backup channel alongside BlueBubbles/iMessage (primary)"
+    ],
+    "decisions": [
+      "Dropped Subspace task — added by previous session's architecture review, Jeff doesn't recognize the product",
+      "Dropped State of Mind XML tasks — JSON path confirmed working; XML import path unused",
+      "Dropped secrets rotation — credentials not exposed, Telegram kept as backup channel",
+      "Rule 6c: default to 'now' for bare numbers; ask only for ambiguous relative references (last Tuesday, the other day, bare weekday names)",
+      "oura_heartrate retention: 90 days (sufficient for trends, prevents unbounded growth)",
+      "markers_canonical.json: aliases include units in parentheses, matching actual DB marker name format"
+    ],
+    "blockers": [],
+    "open_questions": [
+      "METRIC_MAP body_mass/body_fat_percentage field names in Health Auto Export JSON — unconfirmed, no weigh-in day in test exports yet"
+    ],
+    "risks": [
+      "markers_canonical.json alias map: currently covers one lab provider format; new provider would need aliases added before import",
+      "import-blood-labs.py identity assignment lines 232-233 fixed with pd.isna() then improved to math.isnan() — NaN safety now correct",
+      "DATA_CARD.md staleness window: regenerated on each nightly sync; if sync fails, card won't update (informational only)"
+    ]
+  },
+  "working_set": {
+    "key_files": [
+      "agents/sample-agent/workspace/health/health_db.py",
+      "agents/sample-agent/workspace/health/health_query.py",
+      "agents/sample-agent/workspace/skills/podcast-summary/scripts/health_store.py",
+      "scripts/oura-sync.py",
+      "scripts/import-blood-labs.py",
+      "scripts/generate-data-card.py",
+      "scripts/markers_canonical.json",
+      "agents/sample-agent/workspace/AGENTS.md",
+      "docs/backlog.md"
+    ],
+    "active_ids": [],
+    "recent_commands": [
+      "python3 -m unittest discover -s agents/sample-agent/workspace/health -q",
+      "git push origin main",
+      "python3 scripts/generate-data-card.py"
+    ]
+  },
+  "context": {
+    "wip_state": "clean",
+    "last_commit": "8f8d986",
+    "session_arc": "13-session sprint on health-db multi-pillar system (Apr 26–May 1). S1 scoped health-db (SQLite, labs, Oura). S2 built phases 1-3 (schema, blood_labs_history, oura_* tables). S3 added 4 test files + arch cleanup. S4 clean/test/evaluate, fixed 3 arch issues (busy_timeout, session grouping), disabled Telegram. S5 scoped health_query.py (3 subcommands, 6 intents). S6 built health_query: lab-history/oura-metrics/podcast-search subcommands + cost_summary.py + SKILL.md, 88 tests, enabled Perplexity, pushed. S7 debugged live routing: fixed AGENTS.md Rule 6b enforcement, SKILL.md guardrails, skill config sync. S8 built BP pillar end-to-end (import, query, entry, tests, Intents 7-8, Rules 6b+6c), fixed 3 arch issues, 72 tests, 14 commits. S9 scoped multi-source import and completed Withings integration (OAuth2, daily cron, 154 rows). S10 completed full system: Apple Health XML (all categories), Evernote ENEX parser, Oura tags, 5 new query subcommands, ran clean/test/evaluate (172 tests), hardened security (Keychain, daily launchd, backup), fixed 2 bugs (Withings source, oura sync_tags), consolidated AGENTS.md Rule 6b to table, added 3 SPECTRE learnings. S11 finalized iOS automation end-to-end: Health Auto Export app + 2 Shortcuts + launchd watcher, HRV backfill (3138 rows), migration framework tests (v0→v5), sync-status + mood subcommands, State of Mind pillar, secrets rotation script, iMessage test checklist, 145 tests. S12 addressed architecture review findings: _AUTOMATED_SOURCES expanded, OVERLAP_DAYS=1 added, WatchPaths→5-min cron, archive moved + flock guard, captured 2 SPECTRE skills (integration-health-auto-export, patterns-launchd-watchpaths-icloud), 195 tests, pushed 16 commits. S13 (final) completed hardening sprint: v6 DB migration (lab_results.in_range_flag, health_knowledge enrichment + FTS5 topics), markers_canonical.json units alias map (21 groups), oura-sync hardening (FetchError, per-chunk last_synced, lock guard, 90-day retention), DATA_CARD.md generation, Rule 6c temporal classifier (body-log subcommand), fixed 2 HIGH code review issues (cleanup_old_heartrate guard, math.isnan() NaN safety), 38-line clean pass, 273 tests (78 test growth), dropped Subspace/XML/secrets rotation tasks, pushed all commits. System fully hardened, tested, documented. Ready for next sprint: daily_brief queries, correlations view, trends job."
+  }
+}
