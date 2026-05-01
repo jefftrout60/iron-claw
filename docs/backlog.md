@@ -46,7 +46,7 @@
 - [ ] **Weight iMessage entry** — Rule 6c pattern: "185.2" → body_metrics table. Same flow as BP entry. ~half-session.
 - [ ] **Weekly summary email extension** — add weight trend + workout summary alongside existing BP/Oura section. Intent 5 partially wired.
 - [ ] **avg_hrv_rmssd trend query** — add health_query.py subcommand now that column is populated
-- [ ] **State of Mind vs Oura readiness correlation** — both pillars live; cross-pillar query subcommand or agent skill
+- [ ] **State of Mind vs Oura readiness correlation** — Oura readiness (AM physiological prediction) vs State of Mind valence (PM subjective result, logged ~9 PM). Query: does high readiness reliably predict a good day? Both pillars live; needs cross-pillar query subcommand or agent skill.
 - [ ] **Doctor periodic BP summary email** — ask at next appointment if useful; cadence TBD
 - [ ] **Oura context injection** — before answering any health question, pull current readiness/sleep/HRV and inject as live context ("given your readiness is 62 today..."). Now unblocked.
 - [ ] **events table** — `events(date, kind, label, notes)` for interventions ("started statin", "DEXA scan"). Enables before/after correlation queries.
