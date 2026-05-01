@@ -33,6 +33,14 @@
 
 ---
 
+### High-Value Queries (DB is ready, just need building)
+
+- [ ] **`daily_brief(day)` query** — the killer-app query: one call returns Oura sleep/readiness/HRV + latest out-of-range labs + health_knowledge entries matching current lab topics (e.g. ApoB elevated → cite Attia ApoB episodes). Agent can call it forever once built.
+- [ ] **Correlations view** — pre-baked SQL joining lab_results to oura_daily windowed by date. "Did my ApoB drop after 8 weeks of Zone 2?" is what this DB exists to answer. Agent shouldn't write this SQL fresh each time.
+- [ ] **Trends snapshot job** — daily cron computes and stores 7d/30d/90d deltas per lab marker into a `lab_trends` table. "What changed recently?" becomes one SELECT.
+
+---
+
 ### Health Pillars — Near Term
 
 - [ ] **Weight iMessage entry** — Rule 6c pattern: "185.2" → body_metrics table. Same flow as BP entry. ~half-session.
@@ -73,6 +81,16 @@
 
 ---
 
+### Lab Data Quality
+
+- [ ] **Reference-range flagging at write time** — compute `in/out/borderline` flag when inserting lab results; store it. `SELECT * FROM lab_results WHERE flag='out' ORDER BY date DESC` becomes "what's wrong with me right now."
+- [ ] **Units registry** — `lab_markers.canonical_unit` + `markers_canonical.json` alias map. Without this, lab data is one provider-switch away from silent corruption (5.4 mmol/L vs 97 mg/dL for glucose).
+- [ ] **lab_results ON CONFLICT DO UPDATE** — replace current destructive `INSERT OR REPLACE` (which resets `imported_at` and breaks audit trail) with `ON CONFLICT DO UPDATE SET ... WHERE value IS NOT excluded.value`.
+- [ ] **enrichment_status column** — track topic extraction failures (`'ok'|'pending'|'failed'`) so backfilling missed episodes is a simple SELECT.
+- [ ] **FTS on health_knowledge.topics** — topics is JSON in TEXT, not indexed by FTS5. Health questions matching a topic tag miss episodes whose summary doesn't repeat the tag. Concatenate topics into FTS5 indexed text at insert time.
+
+---
+
 ### Architecture
 
 - [ ] **True partial failure tracking in oura-sync.py** — OVERLAP_DAYS=1 is a bandaid. Real fix: refactor fetch_all to signal success/failure per chunk so last_synced only advances to confirmed data.
@@ -81,6 +99,8 @@
 - [ ] **Rule 6c state machine** — "now or past?" question can silently drop a reading if unanswered. Default to "now", only ask when ambiguous.
 - [ ] **oura_heartrate retention policy** — ~17K rows/year; add cleanup_old_heartrate helper before table hits 1M rows
 - [ ] **Migration ladder refactor** — before v8, convert to dispatcher pattern. Not urgent at v5.
+- [ ] **flock guard for oura-sync.py** — single-instance guard so overlapping launchd runs can't corrupt the DB.
+- [ ] **DATA_CARD.md** — LLM-facing markdown listing what's in health.db: tables, units, date ranges, last-sync times. Cheap to write; agent currently has to introspect schema to know what data exists.
 
 ---
 
