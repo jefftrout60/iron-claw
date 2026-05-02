@@ -20,7 +20,7 @@ BACKUP_FILE="$BACKUP_DIR/health-$(date +%F).db"
 sqlite3 "$DB_PATH" ".backup '$BACKUP_FILE'"
 echo "Backed up to $BACKUP_FILE"
 
-# Prune backups older than 7 days
-find "$BACKUP_DIR" -name "health-*.db" -mtime +7 -delete
+# Prune backups older than 30 days
+find "$BACKUP_DIR" -name "health-*.db" -mtime +30 -delete
 REMAINING=$(find "$BACKUP_DIR" -name "health-*.db" | wc -l | xargs)
 echo "Backup directory: $REMAINING file(s) retained"
