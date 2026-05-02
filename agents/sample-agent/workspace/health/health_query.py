@@ -23,6 +23,7 @@ Exit 0 on success, exit 1 with {"error": "..."} JSON on failure.
 from __future__ import annotations
 
 import argparse
+from collections import defaultdict
 import json
 import re
 import sqlite3
@@ -272,7 +273,6 @@ def hrv_trend(weeks: int) -> dict:
         _err(f"no Oura data in last {weeks} weeks")
 
     # Bucket by ISO week (YYYY-Www)
-    from collections import defaultdict
     buckets: dict[str, list] = defaultdict(list)
     for r in rows:
         day_dt = date.fromisoformat(r["day"])

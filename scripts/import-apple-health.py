@@ -590,7 +590,7 @@ def main() -> None:
 
     print(
         f"Parsed: {len(bp_pairs)} BP pairs, {len(body_records)} body records "
-        f"({sum(1 for r in body_records if r['type'] == 'weight_kg')} weight + "
+        f"({sum(1 for r in body_records if r['type'] in ('weight_kg', 'weight_lbs'))} weight + "
         f"{sum(1 for r in body_records if r['type'] == 'fat_ratio')} fat%), "
         f"{len(steps_by_date)} step days, {len(daylight_by_date)} daylight days, "
         f"{len(workouts)} workouts, {len(som_records)} state-of-mind samples"

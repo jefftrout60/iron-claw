@@ -35,7 +35,7 @@ _TABLES_ADDED_BY_VERSION = {
 }
 
 # All tables expected in a fully-migrated v7 DB
-_ALL_V6_TABLES = {
+_ALL_V7_TABLES = {
     # v1 base tables
     "health_knowledge",
     "lab_markers",
@@ -66,6 +66,12 @@ def _list_tables(conn: sqlite3.Connection) -> set:
         "SELECT name FROM sqlite_master WHERE type='table'"
     ).fetchall()
     return {row[0] for row in rows}
+
+
+def _col_names(conn: sqlite3.Connection, table: str) -> set:
+    """Return set of column names for a table."""
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return {row[1] for row in rows}
 
 
 def _conn_at_version(n: int) -> sqlite3.Connection:
@@ -124,7 +130,7 @@ class TestFreshDBReachesV7(unittest.TestCase):
         self.assertEqual(version, 7)
 
         tables = _list_tables(conn)
-        for table in _ALL_V6_TABLES:
+        for table in _ALL_V7_TABLES:
             self.assertIn(table, tables, f"Missing table after fresh init: {table}")
 
 
@@ -178,7 +184,8 @@ class TestV3ToV7(unittest.TestCase):
 
 class TestV5ToV6Migration(unittest.TestCase):
     """
-    A v5 DB (has state_of_mind, missing v6 columns) must upgrade to v6 with:
+    A v5 DB (has state_of_mind, missing v6 columns) must upgrade to v7 with
+    v6 columns applied:
       - in_range_flag column on lab_results
       - enrichment_status column on health_knowledge
       - topics_text column on health_knowledge
@@ -190,7 +197,7 @@ class TestV5ToV6Migration(unittest.TestCase):
         Return an in-memory DB stamped at user_version=5 with v6 columns absent.
 
         Strategy:
-          1. Run initialize_schema to reach v6 (all columns present).
+          1. Run initialize_schema to reach v7 (all columns present).
           2. Drop the three v6 columns using ALTER TABLE DROP COLUMN (SQLite >= 3.35).
           3. Rebuild FTS without topics_text to restore the v5 FTS state.
           4. Stamp user_version back to 5.
@@ -237,16 +244,12 @@ class TestV5ToV6Migration(unittest.TestCase):
         conn.execute("PRAGMA foreign_keys = ON")
         return conn
 
-    def _col_names(self, conn: sqlite3.Connection, table: str) -> set:
-        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
-        return {row[1] for row in rows}
-
     def test_v5_to_v6_migration(self):
         conn = self._build_v5_db()
 
         # Confirm v5 state: v6 columns must be absent before migration
-        lr_cols_before = self._col_names(conn, "lab_results")
-        hk_cols_before = self._col_names(conn, "health_knowledge")
+        lr_cols_before = _col_names(conn, "lab_results")
+        hk_cols_before = _col_names(conn, "health_knowledge")
         self.assertNotIn("in_range_flag", lr_cols_before,
                          "Setup error: in_range_flag should not exist at v5")
         self.assertNotIn("enrichment_status", hk_cols_before,
@@ -257,15 +260,15 @@ class TestV5ToV6Migration(unittest.TestCase):
         health_db.initialize_schema(conn)
 
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        self.assertGreaterEqual(version, 6, "user_version must be at least 6 after migration")
+        self.assertEqual(version, 7, "user_version must be 7 after migration")
 
         # in_range_flag must exist on lab_results
-        lr_cols = self._col_names(conn, "lab_results")
+        lr_cols = _col_names(conn, "lab_results")
         self.assertIn("in_range_flag", lr_cols,
                       "in_range_flag column must exist on lab_results after v6 migration")
 
         # enrichment_status must exist on health_knowledge
-        hk_cols = self._col_names(conn, "health_knowledge")
+        hk_cols = _col_names(conn, "health_knowledge")
         self.assertIn("enrichment_status", hk_cols,
                       "enrichment_status column must exist on health_knowledge after v6 migration")
 
@@ -305,9 +308,6 @@ class TestV4ToV7(unittest.TestCase):
 class TestV6ToV7Migration(unittest.TestCase):
     """A v6 DB must gain min_hr and intensity_met on workouts after upgrade to v7."""
 
-    def _col_names(self, conn, table):
-        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
-        return {row[1] for row in rows}
 
     def test_v6_to_v7_adds_workout_columns(self):
         conn = sqlite3.connect(":memory:")
@@ -320,7 +320,7 @@ class TestV6ToV7Migration(unittest.TestCase):
         conn.execute("PRAGMA user_version = 6")
         conn.commit()
 
-        cols_before = self._col_names(conn, "workouts")
+        cols_before = _col_names(conn, "workouts")
         self.assertNotIn("min_hr", cols_before, "Setup error: min_hr should not exist at v6")
         self.assertNotIn("intensity_met", cols_before, "Setup error: intensity_met should not exist at v6")
 
@@ -329,7 +329,7 @@ class TestV6ToV7Migration(unittest.TestCase):
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         self.assertEqual(version, 7)
 
-        cols_after = self._col_names(conn, "workouts")
+        cols_after = _col_names(conn, "workouts")
         self.assertIn("min_hr", cols_after, "min_hr must exist on workouts after v7 migration")
         self.assertIn("intensity_met", cols_after, "intensity_met must exist on workouts after v7 migration")
 

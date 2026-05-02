@@ -108,8 +108,6 @@ def parse_metrics(data: dict):
             som_raw.extend(entries)
             continue
 
-        units = metric.get("units", "")
-
         for entry in entries:
             raw_date = entry.get("date", "")
             if not raw_date:
@@ -146,6 +144,21 @@ def parse_metrics(data: dict):
                 body_records.append({"date": d, "time": t, "type": "fat_ratio_pct", "value": fat_pct})
 
     return body_records, steps_by_date, daylight_by_date, som_raw
+
+
+def _extract_hr(node):
+    """Extract a bpm integer from a {"qty": N} dict or a plain numeric scalar."""
+    if isinstance(node, dict):
+        try:
+            return int(float(node.get("qty", 0))) or None
+        except (TypeError, ValueError):
+            return None
+    elif node is not None:
+        try:
+            return int(float(node)) or None
+        except (TypeError, ValueError):
+            return None
+    return None
 
 
 def parse_workouts(data: dict) -> list[dict]:
@@ -210,18 +223,6 @@ def parse_workouts(data: dict) -> list[dict]:
         min_hr = None
         hr_stats = w.get("heartRateStats") or w.get("heartRate")
         if isinstance(hr_stats, dict):
-            def _extract_hr(node):
-                if isinstance(node, dict):
-                    try:
-                        return int(float(node.get("qty", 0))) or None
-                    except (TypeError, ValueError):
-                        return None
-                elif node is not None:
-                    try:
-                        return int(float(node)) or None
-                    except (TypeError, ValueError):
-                        return None
-                return None
             avg_hr = _extract_hr(hr_stats.get("avg") or hr_stats.get("average"))
             max_hr = _extract_hr(hr_stats.get("max") or hr_stats.get("maximum"))
             min_hr = _extract_hr(hr_stats.get("min") or hr_stats.get("minimum"))
