@@ -204,32 +204,54 @@ def parse_workouts(data: dict) -> list[dict]:
                     pass
 
         # heart rate: may be nested as {"avg": {"qty": N}, "min": ..., "max": ...}
+        # Also accept top-level avgHeartRate / maxHeartRate scalar fields.
         avg_hr = None
         max_hr = None
+        min_hr = None
         hr_stats = w.get("heartRateStats") or w.get("heartRate")
         if isinstance(hr_stats, dict):
-            avg_node = hr_stats.get("avg") or hr_stats.get("average")
-            max_node = hr_stats.get("max") or hr_stats.get("maximum")
-            if isinstance(avg_node, dict):
-                try:
-                    avg_hr = int(float(avg_node.get("qty", 0))) or None
-                except (TypeError, ValueError):
-                    pass
-            elif avg_node is not None:
-                try:
-                    avg_hr = int(float(avg_node)) or None
-                except (TypeError, ValueError):
-                    pass
-            if isinstance(max_node, dict):
-                try:
-                    max_hr = int(float(max_node.get("qty", 0))) or None
-                except (TypeError, ValueError):
-                    pass
-            elif max_node is not None:
-                try:
-                    max_hr = int(float(max_node)) or None
-                except (TypeError, ValueError):
-                    pass
+            def _extract_hr(node):
+                if isinstance(node, dict):
+                    try:
+                        return int(float(node.get("qty", 0))) or None
+                    except (TypeError, ValueError):
+                        return None
+                elif node is not None:
+                    try:
+                        return int(float(node)) or None
+                    except (TypeError, ValueError):
+                        return None
+                return None
+            avg_hr = _extract_hr(hr_stats.get("avg") or hr_stats.get("average"))
+            max_hr = _extract_hr(hr_stats.get("max") or hr_stats.get("maximum"))
+            min_hr = _extract_hr(hr_stats.get("min") or hr_stats.get("minimum"))
+        # Fall back to top-level scalar fields (Workout export format)
+        if avg_hr is None and w.get("avgHeartRate") is not None:
+            try:
+                avg_hr = int(float(w["avgHeartRate"].get("qty", w["avgHeartRate"])
+                             if isinstance(w["avgHeartRate"], dict) else w["avgHeartRate"])) or None
+            except (TypeError, ValueError):
+                pass
+        if max_hr is None and w.get("maxHeartRate") is not None:
+            try:
+                max_hr = int(float(w["maxHeartRate"].get("qty", w["maxHeartRate"])
+                             if isinstance(w["maxHeartRate"], dict) else w["maxHeartRate"])) or None
+            except (TypeError, ValueError):
+                pass
+
+        # intensity: kcal/hr·kg == METs — objective effort level
+        intensity_met = None
+        intensity_node = w.get("intensity")
+        if isinstance(intensity_node, dict):
+            try:
+                intensity_met = round(float(intensity_node.get("qty", 0)), 3) or None
+            except (TypeError, ValueError):
+                pass
+        elif intensity_node is not None:
+            try:
+                intensity_met = round(float(intensity_node), 3) or None
+            except (TypeError, ValueError):
+                pass
 
         workouts_out.append({
             "workout_type": workout_type,
@@ -240,6 +262,8 @@ def parse_workouts(data: dict) -> list[dict]:
             "calories": calories,
             "avg_hr": avg_hr,
             "max_hr": max_hr,
+            "min_hr": min_hr,
+            "intensity_met": intensity_met,
         })
 
     return workouts_out
@@ -465,18 +489,21 @@ def import_workouts(conn, workouts: list) -> None:
             """
             INSERT INTO workouts
                 (date, start_time, end_time, workout_type, duration_min,
-                 calories, avg_hr, max_hr, source)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'health_auto_export')
+                 calories, avg_hr, max_hr, min_hr, intensity_met, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'health_auto_export')
             ON CONFLICT(date, start_time, workout_type) DO UPDATE SET
-                end_time     = excluded.end_time,
-                duration_min = excluded.duration_min,
-                calories     = excluded.calories,
-                avg_hr       = excluded.avg_hr,
-                max_hr       = excluded.max_hr
+                end_time      = excluded.end_time,
+                duration_min  = excluded.duration_min,
+                calories      = excluded.calories,
+                avg_hr        = excluded.avg_hr,
+                max_hr        = excluded.max_hr,
+                min_hr        = excluded.min_hr,
+                intensity_met = excluded.intensity_met
             """,
             (
                 w["date"], w["start_time"], w["end_time"], w["workout_type"],
                 w["duration_min"], w["calories"], w["avg_hr"], w["max_hr"],
+                w["min_hr"], w["intensity_met"],
             ),
         )
         if cursor.rowcount > 0:

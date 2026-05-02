@@ -3,10 +3,10 @@
 Tests for health_db schema migration paths.
 
 Verifies that initialize_schema correctly upgrades a DB from any prior version
-to the current SCHEMA_VERSION (6), and that all column patches are idempotent.
+to the current SCHEMA_VERSION (7), and that all column patches are idempotent.
 
 Strategy for incremental-path tests:
-  1. Open an in-memory DB and call initialize_schema → reaches v6.
+  1. Open an in-memory DB and call initialize_schema → reaches v7.
   2. Stamp the DB back to version N with PRAGMA user_version = N.
   3. Drop tables that were added in versions > N.
   4. Call initialize_schema again — it must apply only the missing migrations.
@@ -34,7 +34,7 @@ _TABLES_ADDED_BY_VERSION = {
     2: ["body_metrics"],
 }
 
-# All tables expected in a fully-migrated v6 DB
+# All tables expected in a fully-migrated v7 DB
 _ALL_V6_TABLES = {
     # v1 base tables
     "health_knowledge",
@@ -56,6 +56,7 @@ _ALL_V6_TABLES = {
     # v5
     "state_of_mind",
     # v6: no new tables — only new columns + FTS rebuild
+    # v7: no new tables — only new columns on workouts
 }
 
 
@@ -72,7 +73,7 @@ def _conn_at_version(n: int) -> sqlite3.Connection:
     Return an in-memory DB that looks like it was last migrated to version N.
 
     Steps:
-      1. Create in-memory DB, run initialize_schema → reaches v6.
+      1. Create in-memory DB, run initialize_schema → reaches v7.
       2. Stamp version down to N.
       3. Drop tables introduced in versions > N so the DB truly resembles a v-N DB.
     """
@@ -90,6 +91,15 @@ def _conn_at_version(n: int) -> sqlite3.Connection:
         if ver > n:
             for table in _TABLES_ADDED_BY_VERSION[ver]:
                 conn.execute(f"DROP TABLE IF EXISTS {table}")
+
+    # Drop columns added in v7 when simulating pre-v7 state
+    if n < 7:
+        for col in ("min_hr", "intensity_met"):
+            try:
+                conn.execute(f"ALTER TABLE workouts DROP COLUMN {col}")
+            except Exception:
+                pass
+
     conn.commit()
 
     # Re-enable FK enforcement for the tests
@@ -101,31 +111,29 @@ def _conn_at_version(n: int) -> sqlite3.Connection:
 # Tests
 # ---------------------------------------------------------------------------
 
-class TestFreshDBReachesV6(unittest.TestCase):
-    """An empty in-memory DB must reach version 6 with all tables present."""
+class TestFreshDBReachesV7(unittest.TestCase):
+    """An empty in-memory DB must reach version 7 with all tables present."""
 
-    def test_fresh_db_reaches_v6(self):
+    def test_fresh_db_reaches_v7(self):
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
         health_db.initialize_schema(conn)
 
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         self.assertEqual(version, health_db.SCHEMA_VERSION)
-        self.assertEqual(version, 6)
+        self.assertEqual(version, 7)
 
         tables = _list_tables(conn)
-        # Every table including state_of_mind must exist
         for table in _ALL_V6_TABLES:
             self.assertIn(table, tables, f"Missing table after fresh init: {table}")
 
 
-class TestV2ToV6(unittest.TestCase):
-    """A v2 DB (has body_metrics, missing v3-v6 tables) must upgrade to v6."""
+class TestV2ToV7(unittest.TestCase):
+    """A v2 DB (has body_metrics, missing v3-v7 tables) must upgrade to v7."""
 
-    def test_v2_to_v6(self):
+    def test_v2_to_v7(self):
         conn = _conn_at_version(2)
 
-        # Confirm the setup looks like v2: body_metrics present, v3+ absent
         tables_before = _list_tables(conn)
         self.assertIn("body_metrics", tables_before)
         for table in ["activity_daily", "workouts", "workout_exercises",
@@ -136,18 +144,18 @@ class TestV2ToV6(unittest.TestCase):
         health_db.initialize_schema(conn)
 
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        self.assertEqual(version, 6)
+        self.assertEqual(version, 7)
 
         tables_after = _list_tables(conn)
         for table in ["workout_exercises", "oura_tags", "state_of_mind"]:
             self.assertIn(table, tables_after,
-                          f"Missing table after v2→v6 migration: {table}")
+                          f"Missing table after v2→v7 migration: {table}")
 
 
-class TestV3ToV6(unittest.TestCase):
-    """A v3 DB (has activity_daily/workouts, missing v4-v6 tables) must upgrade to v6."""
+class TestV3ToV7(unittest.TestCase):
+    """A v3 DB (has activity_daily/workouts, missing v4-v7 tables) must upgrade to v7."""
 
-    def test_v3_to_v6(self):
+    def test_v3_to_v7(self):
         conn = _conn_at_version(3)
 
         tables_before = _list_tables(conn)
@@ -160,12 +168,12 @@ class TestV3ToV6(unittest.TestCase):
         health_db.initialize_schema(conn)
 
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        self.assertEqual(version, 6)
+        self.assertEqual(version, 7)
 
         tables_after = _list_tables(conn)
         for table in ["workout_exercises", "oura_tags", "state_of_mind"]:
             self.assertIn(table, tables_after,
-                          f"Missing table after v3→v6 migration: {table}")
+                          f"Missing table after v3→v7 migration: {table}")
 
 
 class TestV5ToV6Migration(unittest.TestCase):
@@ -248,9 +256,8 @@ class TestV5ToV6Migration(unittest.TestCase):
 
         health_db.initialize_schema(conn)
 
-        # Version must advance to 6
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        self.assertEqual(version, 6, "user_version must be 6 after migration")
+        self.assertGreaterEqual(version, 6, "user_version must be at least 6 after migration")
 
         # in_range_flag must exist on lab_results
         lr_cols = self._col_names(conn, "lab_results")
@@ -273,10 +280,10 @@ class TestV5ToV6Migration(unittest.TestCase):
             self.fail(f"health_knowledge_fts is not queryable after v6 migration: {exc}")
 
 
-class TestV4ToV6(unittest.TestCase):
-    """A v4 DB (has workout_exercises/oura_tags, missing state_of_mind) must upgrade to v6."""
+class TestV4ToV7(unittest.TestCase):
+    """A v4 DB (has workout_exercises/oura_tags, missing state_of_mind) must upgrade to v7."""
 
-    def test_v4_to_v6(self):
+    def test_v4_to_v7(self):
         conn = _conn_at_version(4)
 
         tables_before = _list_tables(conn)
@@ -288,30 +295,60 @@ class TestV4ToV6(unittest.TestCase):
         health_db.initialize_schema(conn)
 
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        self.assertEqual(version, 6)
+        self.assertEqual(version, 7)
 
         tables_after = _list_tables(conn)
         self.assertIn("state_of_mind", tables_after,
-                      "Missing state_of_mind after v4→v6 migration")
+                      "Missing state_of_mind after v4→v7 migration")
+
+
+class TestV6ToV7Migration(unittest.TestCase):
+    """A v6 DB must gain min_hr and intensity_met on workouts after upgrade to v7."""
+
+    def _col_names(self, conn, table):
+        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+        return {row[1] for row in rows}
+
+    def test_v6_to_v7_adds_workout_columns(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        health_db.initialize_schema(conn)
+
+        # Roll back to v6, drop the v7 columns
+        conn.execute("ALTER TABLE workouts DROP COLUMN min_hr")
+        conn.execute("ALTER TABLE workouts DROP COLUMN intensity_met")
+        conn.execute("PRAGMA user_version = 6")
+        conn.commit()
+
+        cols_before = self._col_names(conn, "workouts")
+        self.assertNotIn("min_hr", cols_before, "Setup error: min_hr should not exist at v6")
+        self.assertNotIn("intensity_met", cols_before, "Setup error: intensity_met should not exist at v6")
+
+        health_db.initialize_schema(conn)
+
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        self.assertEqual(version, 7)
+
+        cols_after = self._col_names(conn, "workouts")
+        self.assertIn("min_hr", cols_after, "min_hr must exist on workouts after v7 migration")
+        self.assertIn("intensity_met", cols_after, "intensity_met must exist on workouts after v7 migration")
 
 
 class TestIdempotentColumnPatches(unittest.TestCase):
-    """Calling initialize_schema twice on a v6 DB must not raise any error."""
+    """Calling initialize_schema twice on a v7 DB must not raise any error."""
 
     def test_idempotent_column_patches(self):
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
         health_db.initialize_schema(conn)
 
-        # Second call — all CREATE IF NOT EXISTS and try/except ALTER TABLE
-        # patches must be silent
         try:
             health_db.initialize_schema(conn)
         except Exception as exc:
             self.fail(f"initialize_schema raised on second call: {exc}")
 
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        self.assertEqual(version, 6)
+        self.assertEqual(version, 7)
 
 
 class TestSyncHelpersAvailable(unittest.TestCase):

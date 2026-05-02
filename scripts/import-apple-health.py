@@ -109,7 +109,9 @@ def parse_export(filepath: Path):
                 elif rtype == "HKQuantityTypeIdentifierBloodPressureDiastolic":
                     bp_diastolic[ts_str] = value
                 elif rtype == "HKQuantityTypeIdentifierBodyMass":
-                    body_records.append({"ts": ts_str, "type": "weight_kg", "value": value})
+                    unit = elem.get("unit", "kg").lower()
+                    rec_type = "weight_lbs" if unit in ("lb", "lbs") else "weight_kg"
+                    body_records.append({"ts": ts_str, "type": rec_type, "value": value})
                 elif rtype == "HKQuantityTypeIdentifierBodyFatPercentage":
                     body_records.append({"ts": ts_str, "type": "fat_ratio", "value": value})
                 elif rtype == "HKQuantityTypeIdentifierStepCount":
@@ -456,8 +458,8 @@ def import_body_metrics(conn, body_records: list) -> None:
         date_str = dt.strftime("%Y-%m-%d")
         time_str = dt.strftime("%H:%M")
 
-        if rec["type"] == "weight_kg":
-            weight_lbs = rec["value"] * 2.20462
+        if rec["type"] in ("weight_kg", "weight_lbs"):
+            weight_lbs = rec["value"] * 2.20462 if rec["type"] == "weight_kg" else rec["value"]
             cursor = conn.execute(
                 f"""
                 INSERT INTO body_metrics (date, time, weight_lbs, source)

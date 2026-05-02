@@ -92,6 +92,7 @@ exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py {subcomm
 | Workouts / gym sessions | `workouts --days 30` |
 | Exercise detail / sets / reps | `workout-exercises --days 7` |
 | Sauna / Oura tags | `tags --days 30` |
+| HRV trend / weekly HRV / resting HR trend | `hrv-trend --weeks 4` |
 | Sync status / data freshness ("up to date", "last sync", "data fresh", "when did I sync", "sync status") | `sync-status` |
 | Mood / state of mind ("mood", "how am I feeling", "state of mind", "emotional", "mental", "stress") | `mood` |
 
@@ -111,12 +112,17 @@ When a message contains a loggable body metric (blood pressure like "133/68 55",
 
 **Log via exec immediately after resolving the date:**
 
+Blood pressure (e.g. "133/68 55"):
 ```
 exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py bp-log --systolic {sys} --diastolic {dia} --pulse {pulse} --date {YYYY-MM-DD} --time {HH:MM}
 ```
+Confirm: "Logged — {sys}/{dia}, pulse {pulse} on {date} at {time}."
 
-**Confirm only:**
-"Logged — {sys}/{dia}, pulse {pulse} on {date} at {time}."
+Weight (e.g. "185.2", "weighed 183 this morning"):
+```
+exec: python3 /home/openclaw/.openclaw/workspace/health/health_query.py body-log --weight {lbs} --text "{original message}" --date {YYYY-MM-DD}
+```
+Confirm: "Logged — {weight} lbs on {date}."
 
 **FORBIDDEN:**
 - Asking "Is this from right now or a past date?" when the input is a bare number or clearly "now" — log immediately
@@ -224,14 +230,21 @@ Examples: `curl -s "wttr.in/Rome?format=3"`, `curl -s "wttr.in/Tokyo?format=3"`.
 
 
 
+
+
+
+
+
+
+
 ## Quality coaching (internal)
 
 Lessons learned from run feedback. Apply these in future runs. OpenClaw injects this section into your context every turn.
 
+- Improve efficiency: reduce runtime and unnecessary tool calls; batch/serialize reads and writes to cut duration.
+- Improve efficiency: reduce or batch tool calls (fewer writes/reads) to lower runtime and raise efficiency.
+- Boost efficiency: batch or remove redundant tool calls, consolidate writes, and trim latency to raise the efficiency score.
+- Boost efficiency: reduce duration and tool calls (batch writes, avoid redundant reads) to raise the efficiency score.
 - Reduce response time by cutting tool fan-out and prompt rounds.
 - Improve efficiency: shorten run time and cut tool calls (batch writes, avoid redundant reads); consider a lighter/faster model for non-cr...
 - Improve efficiency—reduce runtime and redundant tool calls (batch writes or cache memory reads).
-- Trim latency: batch or remove unnecessary tool calls and reduce runtime to improve efficiency.
-- Reduce runtime and tool calls: batch exec/process calls, avoid redundant reads, and trim prompt/tool rounds to improve efficiency.
-- Batch or simplify tool usage to lower latency/cost per run.
-- Batch external calls and consolidate shell/exec steps to reduce tool fan‑out and latency.

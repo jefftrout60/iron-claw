@@ -5,6 +5,7 @@ health_query.py — Read-only query interface for health.db.
 Subcommands (all output JSON to stdout):
   lab-trend          --marker NAME [--months N]
   oura-window        [--metric NAME | --all] [--days N]
+  hrv-trend          [--weeks N]
   search             --query TEXT [--limit N]
   blood-pressure     [--days N] [--start YYYY-MM-DD] [--end YYYY-MM-DD]
   body-metrics       [--days N] [--start YYYY-MM-DD] [--end YYYY-MM-DD]
@@ -241,6 +242,75 @@ def oura_window(days: int, metric: str | None, all_cols: bool) -> dict:
         "data": data,
         "averages": averages,
     }
+
+
+# ---------------------------------------------------------------------------
+# hrv-trend
+# ---------------------------------------------------------------------------
+
+
+def hrv_trend(weeks: int) -> dict:
+    """Return weekly avg_hrv_rmssd and resting_heart_rate averages for the last N weeks.
+
+    Each entry covers a Mon–Sun ISO week. The most recent (possibly partial) week
+    is included. Deltas compare each week to the prior one.
+    """
+    conn = health_db.get_connection()
+
+    cutoff = (date.today() - timedelta(weeks=weeks)).isoformat()
+    rows = conn.execute(
+        """
+        SELECT day, avg_hrv_rmssd, resting_heart_rate
+        FROM oura_daily
+        WHERE day >= ? AND (avg_hrv_rmssd IS NOT NULL OR resting_heart_rate IS NOT NULL)
+        ORDER BY day ASC
+        """,
+        (cutoff,),
+    ).fetchall()
+
+    if not rows:
+        _err(f"no Oura data in last {weeks} weeks")
+
+    # Bucket by ISO week (YYYY-Www)
+    from collections import defaultdict
+    buckets: dict[str, list] = defaultdict(list)
+    for r in rows:
+        day_dt = date.fromisoformat(r["day"])
+        iso_year, iso_week, _ = day_dt.isocalendar()
+        week_key = f"{iso_year}-W{iso_week:02d}"
+        buckets[week_key].append(r)
+
+    weekly = []
+    for week_key in sorted(buckets):
+        week_rows = buckets[week_key]
+        hrv_vals = [r["avg_hrv_rmssd"] for r in week_rows if r["avg_hrv_rmssd"] is not None]
+        rhr_vals = [r["resting_heart_rate"] for r in week_rows if r["resting_heart_rate"] is not None]
+        weekly.append({
+            "week": week_key,
+            "days": len(week_rows),
+            "avg_hrv_rmssd": round(sum(hrv_vals) / len(hrv_vals), 1) if hrv_vals else None,
+            "avg_resting_hr": round(sum(rhr_vals) / len(rhr_vals), 1) if rhr_vals else None,
+        })
+
+    # Add week-over-week deltas
+    for i, entry in enumerate(weekly):
+        if i == 0:
+            entry["hrv_delta"] = None
+            entry["rhr_delta"] = None
+        else:
+            prev = weekly[i - 1]
+            entry["hrv_delta"] = (
+                round(entry["avg_hrv_rmssd"] - prev["avg_hrv_rmssd"], 1)
+                if entry["avg_hrv_rmssd"] is not None and prev["avg_hrv_rmssd"] is not None
+                else None
+            )
+            entry["rhr_delta"] = (
+                round(entry["avg_resting_hr"] - prev["avg_resting_hr"], 1)
+                if entry["avg_resting_hr"] is not None and prev["avg_resting_hr"] is not None
+                else None
+            )
+
+    return {"weeks_requested": weeks, "weeks": weekly}
 
 
 # ---------------------------------------------------------------------------
@@ -810,6 +880,9 @@ def main() -> None:
     lt.add_argument("--months", type=int, default=12, help="Lookback window in months")
 
     ow = sub.add_parser("oura-window", help="Oura daily metrics for a time window")
+
+    ht = sub.add_parser("hrv-trend", help="Weekly HRV and resting HR trend with week-over-week deltas")
+    ht.add_argument("--weeks", type=int, default=4, help="Number of weeks to include (default: 4)")
     ow.add_argument("--days", type=int, default=7, help="Lookback window in days")
     ow.add_argument("--metric", help="Return only this column (plus day)")
     ow.add_argument("--all", dest="all_cols", action="store_true",
@@ -885,6 +958,8 @@ def main() -> None:
 
     if args.command == "lab-trend":
         result = lab_trend(args.marker, args.months)
+    elif args.command == "hrv-trend":
+        result = hrv_trend(args.weeks)
     elif args.command == "oura-window":
         result = oura_window(args.days, args.metric, args.all_cols)
     elif args.command == "search":

@@ -51,7 +51,7 @@ def get_connection(db_path: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 def initialize_schema(conn: sqlite3.Connection) -> None:
@@ -66,6 +66,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
       3 → 4 : workout_exercises, oura_tags
       4 → 5 : state_of_mind
       5 → 6 : lab_results.in_range_flag, health_knowledge.enrichment_status + topics_text, FTS rebuild
+      6 → 7 : workouts.min_hr, workouts.intensity_met
     """
     _version = conn.execute("PRAGMA user_version").fetchone()[0]
     # ---------- health_knowledge ----------------------------------------
@@ -484,6 +485,17 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         )
     if _rows:
         conn.commit()
+
+    # ---------- v7: workouts.min_hr + workouts.intensity_met ---------------
+    if _version < 7:
+        for _col, _type in (("min_hr", "INTEGER"), ("intensity_met", "REAL")):
+            try:
+                conn.execute(f"ALTER TABLE workouts ADD COLUMN {_col} {_type}")
+            except sqlite3.OperationalError:
+                pass  # column already exists (idempotent)
+        conn.execute("PRAGMA user_version = 7")
+        conn.commit()
+        _version = 7
 
 
 # ---------------------------------------------------------------------------
