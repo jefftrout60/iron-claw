@@ -576,6 +576,7 @@ Examples:
         except (ValueError, TypeError):
             pass
 
+    _email_sent_at = None
     if processed and not args.no_email and not _already_sent:
         to_email = env.get("PODCAST_DIGEST_TO_EMAIL", "")
         if to_email:
@@ -589,7 +590,7 @@ Examples:
                     newsletter_count=newsletters_count,
                     newsletter_names=newsletter_names,
                 )
-                status["last_email_sent_at"] = datetime.now(timezone.utc).isoformat()
+                _email_sent_at = datetime.now(timezone.utc).isoformat()
             except Exception as exc:
                 print(f"[engine] WARNING: digest email failed: {exc}", file=sys.stderr)
         else:
@@ -616,6 +617,7 @@ Examples:
         "shows": show_ids,
         "newsletters_archived": newsletters_count,
         "errors": errors,
+        "last_email_sent_at": _email_sent_at,
     }
     write_status(status)
 
