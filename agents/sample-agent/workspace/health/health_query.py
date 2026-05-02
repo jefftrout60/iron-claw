@@ -413,20 +413,24 @@ def body_log(weight_lbs: float | None, fat_ratio_pct: float | None,
                 "question": "What date? (or reply 'today' to use today's date)",
             }
 
+    from datetime import datetime as _dt
+    now_hhmm = _dt.now().strftime("%H:%M")
+
     conn = health_db.get_connection()
     conn.execute(
         """INSERT INTO body_metrics
-               (date, weight_lbs, fat_ratio_pct, source)
-               VALUES (?, ?, ?, 'imessage')
+               (date, time, weight_lbs, fat_ratio_pct, source)
+               VALUES (?, ?, ?, ?, 'imessage')
                ON CONFLICT(date, time) DO UPDATE SET
                  weight_lbs    = excluded.weight_lbs,
                  fat_ratio_pct = excluded.fat_ratio_pct""",
-        (resolved_date, weight_lbs, fat_ratio_pct),
+        (resolved_date, now_hhmm, weight_lbs, fat_ratio_pct),
     )
     conn.commit()
     return {
         "logged": True,
         "date": resolved_date,
+        "time": now_hhmm,
         "weight_lbs": weight_lbs,
         "fat_ratio_pct": fat_ratio_pct,
     }

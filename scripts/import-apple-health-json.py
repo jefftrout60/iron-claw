@@ -227,18 +227,10 @@ def parse_workouts(data: dict) -> list[dict]:
             max_hr = _extract_hr(hr_stats.get("max") or hr_stats.get("maximum"))
             min_hr = _extract_hr(hr_stats.get("min") or hr_stats.get("minimum"))
         # Fall back to top-level scalar fields (Workout export format)
-        if avg_hr is None and w.get("avgHeartRate") is not None:
-            try:
-                avg_hr = int(float(w["avgHeartRate"].get("qty", w["avgHeartRate"])
-                             if isinstance(w["avgHeartRate"], dict) else w["avgHeartRate"])) or None
-            except (TypeError, ValueError):
-                pass
-        if max_hr is None and w.get("maxHeartRate") is not None:
-            try:
-                max_hr = int(float(w["maxHeartRate"].get("qty", w["maxHeartRate"])
-                             if isinstance(w["maxHeartRate"], dict) else w["maxHeartRate"])) or None
-            except (TypeError, ValueError):
-                pass
+        if avg_hr is None:
+            avg_hr = _extract_hr(w.get("avgHeartRate"))
+        if max_hr is None:
+            max_hr = _extract_hr(w.get("maxHeartRate"))
 
         # intensity: kcal/hr·kg == METs — objective effort level
         intensity_met = None

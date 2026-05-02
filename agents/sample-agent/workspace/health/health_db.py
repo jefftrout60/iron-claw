@@ -491,11 +491,17 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         for _col, _type in (("min_hr", "INTEGER"), ("intensity_met", "REAL")):
             try:
                 conn.execute(f"ALTER TABLE workouts ADD COLUMN {_col} {_type}")
-            except sqlite3.OperationalError:
-                pass  # column already exists (idempotent)
+            except sqlite3.OperationalError as _e:
+                if "duplicate column name" not in str(_e):
+                    raise
         conn.execute("PRAGMA user_version = 7")
         conn.commit()
         _version = 7
+
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION, (
+        f"Schema migration incomplete: DB is at v{conn.execute('PRAGMA user_version').fetchone()[0]} "
+        f"but SCHEMA_VERSION={SCHEMA_VERSION}"
+    )
 
 
 # ---------------------------------------------------------------------------
