@@ -177,3 +177,53 @@ Every future iMessage-based entry type (weight, macros, blood glucose, etc.) nee
 1. A `{data}-log` subcommand in `health_query.py`
 2. An entry intent in `health-query/SKILL.md` (separate from the query intent)
 3. A Rule 6c block in `AGENTS.md` with data-specific forbidden phrases
+
+---
+
+## iMessage-Source Data Has No Recovery Path
+
+**This is the most important data integrity risk in the system.**
+
+Entries logged via iMessage (`bp-log`, `body-log`, etc.) exist **only** in health.db.
+Unlike other sources, they cannot be recovered if lost:
+
+| Source | Recovery path |
+|--------|--------------|
+| `omron_csv` | Re-export CSV from Omron app and re-run import |
+| `apple_health` | Re-export XML from Health app and re-run import |
+| `withings_api` | Re-run `withings-sync.py --historical` |
+| `imessage` | **None — backup is the only copy** |
+
+### Mitigations
+
+1. **Daily backup** runs at 03:00 via launchd (`com.ironclaw.health-sync`), 30-day retention:
+   ```bash
+   ls -la agents/sample-agent/workspace/health/backups/
+   ```
+
+2. **Run a backup before any import script:**
+   ```bash
+   bash scripts/backup-health-db.sh
+   ```
+
+3. **Verify row counts before and after any import:**
+   ```bash
+   python3 -c "
+   import sys; sys.path.insert(0, 'agents/sample-agent/workspace/health')
+   import health_db
+   conn = health_db.get_connection()
+   for r in conn.execute('SELECT source, COUNT(*) as n FROM blood_pressure GROUP BY source').fetchall():
+       print(dict(r))
+   "
+   ```
+
+### What happened in production (2026-05)
+
+28 Omron CSV BP readings from Jan–Apr 2026 were wiped during a hardening sprint
+that ran a fresh Apple Health re-import. They were recovered from the original
+CSV file (`omron_2026.csv` in repo root). If those had been `imessage` source,
+they would have been unrecoverable.
+
+**Takeaway**: Keep original import source files (CSVs, ENEX exports) permanently
+in the repo or in a known location. They are your fallback when the backup window
+is exceeded.
