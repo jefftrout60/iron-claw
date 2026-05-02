@@ -113,6 +113,23 @@ if command -v jq >/dev/null 2>&1; then
            end)
       else . end
   ' "$CONFIG_RUNTIME/openclaw.json" > "$tmp_json" && mv "$tmp_json" "$CONFIG_RUNTIME/openclaw.json"
+
+  # Resolve OPENCLAW_GATEWAY_TOKEN into gateway.auth.token so auth is actually enforced.
+  # The config uses the literal string "${OPENCLAW_GATEWAY_TOKEN}" which OpenClaw does not
+  # substitute itself — we must resolve it here before the container starts.
+  _gw_token=""
+  if [[ -f "$AGENT_ENV" ]]; then
+    _gw_token=$(grep -E '^OPENCLAW_GATEWAY_TOKEN=' "$AGENT_ENV" 2>/dev/null | cut -d= -f2- | tr -d '"'"'"'\r' | xargs)
+  fi
+  if [[ -n "$_gw_token" ]] && [[ -f "$CONFIG_RUNTIME/openclaw.json" ]]; then
+    tmp_json=$(mktemp)
+    if jq --arg token "$_gw_token" '.gateway.auth.token = $token' "$CONFIG_RUNTIME/openclaw.json" > "$tmp_json" 2>/dev/null; then
+      mv "$tmp_json" "$CONFIG_RUNTIME/openclaw.json"
+      echo "[$AGENT_NAME] Gateway auth token resolved — unauthorized webchat requests will be rejected" >&2
+    else
+      rm -f "$tmp_json"
+    fi
+  fi
 fi
 
 # Ensure logs directory exists (OpenClaw uses it as /tmp/openclaw and /tmp/openclaw-1000 in container)
