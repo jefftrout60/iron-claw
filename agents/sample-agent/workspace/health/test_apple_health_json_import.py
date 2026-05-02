@@ -39,6 +39,19 @@ _ts_str = _mod._ts_str
 import_activity = _mod.import_activity
 import_body_metrics = _mod.import_body_metrics
 import_state_of_mind = _mod.import_state_of_mind
+_extract_hr = _mod._extract_hr
+parse_workouts = _mod.parse_workouts
+
+# Load the XML importer for regression tests.
+# The importer uses `dict | None` union syntax (PEP 604) in function annotations,
+# which requires Python 3.10+.  Prepend `from __future__ import annotations` so
+# that all annotations are treated as strings at runtime, making it safe on 3.9.
+import types as _types
+_XML_IMPORTER_PATH = Path(__file__).parent.parent.parent.parent.parent / "scripts" / "import-apple-health.py"
+_xml_source = "from __future__ import annotations\n" + _XML_IMPORTER_PATH.read_text(encoding="utf-8")
+_xml_mod = _types.ModuleType("import_apple_health_xml")
+_xml_mod.__file__ = str(_XML_IMPORTER_PATH)
+exec(compile(_xml_source, str(_XML_IMPORTER_PATH), "exec"), _xml_mod.__dict__)
 
 
 # ---------------------------------------------------------------------------
@@ -526,6 +539,167 @@ class TestActivityDbRoundTrip(unittest.TestCase):
             "SELECT source FROM activity_daily WHERE date = '2026-04-01'"
         ).fetchone()
         self.assertEqual(row["source"], "health_auto_export")
+
+
+# ---------------------------------------------------------------------------
+# 10. _extract_hr helper
+# ---------------------------------------------------------------------------
+
+class TestExtractHr(unittest.TestCase):
+
+    def test_dict_qty_truncates_to_int(self):
+        # {"qty": 102.9} → 102 (int truncation, not rounding)
+        self.assertEqual(_extract_hr({"qty": 102.9}), 102)
+
+    def test_plain_scalar_integer(self):
+        self.assertEqual(_extract_hr(111), 111)
+
+    def test_plain_scalar_zero_returns_none(self):
+        # 0 is falsy — treated as "no reading"
+        self.assertIsNone(_extract_hr(0))
+
+    def test_none_input_returns_none(self):
+        self.assertIsNone(_extract_hr(None))
+
+    def test_dict_qty_zero_returns_none(self):
+        self.assertIsNone(_extract_hr({"qty": 0}))
+
+    def test_non_numeric_string_returns_none(self):
+        self.assertIsNone(_extract_hr("abc"))
+
+
+# ---------------------------------------------------------------------------
+# 11. parse_workouts — new fields (min_hr, intensity_met, top-level HR fallback)
+# ---------------------------------------------------------------------------
+
+class TestParseWorkoutsNewFields(unittest.TestCase):
+
+    def _base_workout(self):
+        return {
+            "name": "Cross Training",
+            "start": "2026-05-01 15:28:42 -0600",
+            "end": "2026-05-01 16:36:06 -0600",
+            "duration": 3846.5,
+            "heartRate": {
+                "avg": {"qty": 102.9, "units": "bpm"},
+                "max": {"qty": 111, "units": "bpm"},
+                "min": {"qty": 97, "units": "bpm"},
+            },
+            "intensity": {"qty": 3.585, "units": "kcal/hr·kg"},
+            "activeEnergyBurned": {"qty": 407.8, "units": "kcal"},
+        }
+
+    def _parse_single(self, workout_dict):
+        result = parse_workouts({"workouts": [workout_dict]})
+        self.assertEqual(len(result), 1, "Expected exactly one parsed workout")
+        return result[0]
+
+    def test_min_hr_extracted_from_heart_rate_min(self):
+        w = self._parse_single(self._base_workout())
+        self.assertEqual(w["min_hr"], 97)
+
+    def test_intensity_met_extracted_and_rounded(self):
+        w = self._parse_single(self._base_workout())
+        self.assertAlmostEqual(w["intensity_met"], 3.585, places=3)
+
+    def test_avg_hr_from_top_level_scalar_when_heart_rate_absent(self):
+        workout = self._base_workout()
+        del workout["heartRate"]
+        workout["avgHeartRate"] = {"qty": 102.9}
+        w = self._parse_single(workout)
+        self.assertEqual(w["avg_hr"], 102)
+
+    def test_max_hr_from_top_level_scalar_when_heart_rate_absent(self):
+        workout = self._base_workout()
+        del workout["heartRate"]
+        workout["maxHeartRate"] = {"qty": 111}
+        w = self._parse_single(workout)
+        self.assertEqual(w["max_hr"], 111)
+
+    def test_hr_fields_none_when_no_heart_rate_data(self):
+        workout = self._base_workout()
+        del workout["heartRate"]
+        w = self._parse_single(workout)
+        self.assertIsNone(w["avg_hr"])
+        self.assertIsNone(w["max_hr"])
+        self.assertIsNone(w["min_hr"])
+
+    def test_intensity_met_none_when_intensity_absent(self):
+        workout = self._base_workout()
+        del workout["intensity"]
+        w = self._parse_single(workout)
+        self.assertIsNone(w["intensity_met"])
+
+
+# ---------------------------------------------------------------------------
+# 12. XML importer — weight unit fix regression tests
+# ---------------------------------------------------------------------------
+
+class TestXmlImportBodyMetrics(unittest.TestCase):
+    """
+    Regression tests for the weight unit fix in import-apple-health.py.
+
+    Before the fix, weight_lbs records were incorrectly multiplied by 2.20462
+    (i.e. treated as kg). The fix: weight_lbs stored at face value; weight_kg
+    converted to lbs. Also verifies the source guard: withings_api rows are
+    never overwritten by apple_health rows.
+    """
+
+    def setUp(self):
+        self.conn = _make_conn()
+        self.import_body_metrics = _xml_mod.import_body_metrics
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_weight_lbs_stored_at_face_value(self):
+        # A record already in lbs must be stored as-is — NOT multiplied by 2.20462
+        records = [{"ts": "2026-04-27 08:00:00 -0600", "type": "weight_lbs", "value": 230.96}]
+        self.import_body_metrics(self.conn, records)
+        row = self.conn.execute(
+            "SELECT weight_lbs FROM body_metrics WHERE date = '2026-04-27'"
+        ).fetchone()
+        self.assertIsNotNone(row, "Expected a body_metrics row for 2026-04-27")
+        stored = row[0]
+        # Must be close to 230.96, NOT ~509 (which would be 230.96 × 2.20462)
+        self.assertAlmostEqual(stored, 230.96, places=1,
+                               msg=f"weight_lbs stored as {stored}, expected ~230.96 (not ~509)")
+
+    def test_weight_kg_converted_to_lbs(self):
+        # A record in kg must be converted: 104.76 kg × 2.20462 ≈ 230.98 lbs
+        records = [{"ts": "2026-04-27 09:00:00 -0600", "type": "weight_kg", "value": 104.76}]
+        self.import_body_metrics(self.conn, records)
+        row = self.conn.execute(
+            "SELECT weight_lbs FROM body_metrics WHERE date = '2026-04-27'"
+        ).fetchone()
+        self.assertIsNotNone(row, "Expected a body_metrics row for 2026-04-27")
+        expected_lbs = round(104.76 * 2.20462, 2)
+        self.assertAlmostEqual(row[0], expected_lbs, places=1,
+                               msg=f"weight_kg stored as {row[0]}, expected ~{expected_lbs}")
+
+    def test_withings_api_row_not_overwritten_by_apple_health(self):
+        # Pre-seed a withings_api row at the same (date, time)
+        self.conn.execute(
+            """
+            INSERT INTO body_metrics (date, time, weight_lbs, source)
+            VALUES ('2026-04-27', '08:00', 231.50, 'withings_api')
+            """
+        )
+        self.conn.commit()
+
+        # Attempt to import an apple_health row at the same (date, time)
+        records = [{"ts": "2026-04-27 08:00:00 -0600", "type": "weight_lbs", "value": 230.96}]
+        self.import_body_metrics(self.conn, records)
+
+        row = self.conn.execute(
+            "SELECT weight_lbs, source FROM body_metrics WHERE date = '2026-04-27' AND time = '08:00'"
+        ).fetchone()
+        self.assertIsNotNone(row)
+        # withings_api value must be preserved
+        self.assertAlmostEqual(row[0], 231.50, places=2,
+                               msg="withings_api row was overwritten by apple_health import")
+        self.assertEqual(row[1], "withings_api",
+                         msg=f"source changed to {row[1]!r} — withings_api row was overwritten")
 
 
 # ---------------------------------------------------------------------------

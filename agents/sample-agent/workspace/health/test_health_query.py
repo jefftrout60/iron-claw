@@ -1135,6 +1135,127 @@ class TestParseExplicitDate(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# hrv_trend tests
+# ---------------------------------------------------------------------------
+
+class TestHrvTrend(unittest.TestCase):
+    """Tests for health_query.hrv_trend()."""
+
+    def setUp(self):
+        self.conn = _make_conn()
+        self._original_get_connection = health_db.get_connection
+        health_query.health_db.get_connection = lambda *a, **kw: self.conn
+
+    def tearDown(self):
+        health_db.get_connection = self._original_get_connection
+        self.conn.close()
+
+    def _insert_oura(self, row_id, day, avg_hrv_rmssd=None, resting_heart_rate=None):
+        self.conn.execute(
+            """INSERT INTO oura_daily (id, day, avg_hrv_rmssd, resting_heart_rate)
+               VALUES (?, ?, ?, ?)""",
+            (row_id, day, avg_hrv_rmssd, resting_heart_rate),
+        )
+        self.conn.commit()
+
+    # --- Test 1: weekly bucketing ---
+    def test_two_rows_same_week_produce_one_entry_with_average(self):
+        # 2026-01-05 (Mon) and 2026-01-07 (Wed) are both in ISO week 2026-W01
+        self._insert_oura("r1", "2026-01-05", avg_hrv_rmssd=40.0)
+        self._insert_oura("r2", "2026-01-07", avg_hrv_rmssd=60.0)
+        # Use a large weeks window so both rows are definitely included
+        result = health_query.hrv_trend(520)
+        weeks = result["weeks"]
+        print(f"[test_bucketing] weeks={weeks}")
+        # Both rows are in the same ISO week — must produce exactly one entry
+        self.assertEqual(len(weeks), 1)
+        # Average of 40.0 and 60.0 = 50.0
+        self.assertAlmostEqual(weeks[0]["avg_hrv_rmssd"], 50.0, places=1)
+
+    # --- Test 2: delta computation ---
+    def test_two_consecutive_weeks_produce_correct_deltas(self):
+        # Week 2026-W01: 2026-01-05
+        self._insert_oura("r1", "2026-01-05", avg_hrv_rmssd=40.0, resting_heart_rate=58)
+        # Week 2026-W02: 2026-01-12
+        self._insert_oura("r2", "2026-01-12", avg_hrv_rmssd=50.0, resting_heart_rate=55)
+        result = health_query.hrv_trend(520)
+        weeks = result["weeks"]
+        print(f"[test_deltas] weeks={weeks}")
+        self.assertEqual(len(weeks), 2)
+        # First week: deltas must be None
+        self.assertIsNone(weeks[0]["hrv_delta"])
+        self.assertIsNone(weeks[0]["rhr_delta"])
+        # Second week: hrv_delta = 50.0 - 40.0 = 10.0; rhr_delta = 55 - 58 = -3.0
+        self.assertAlmostEqual(weeks[1]["hrv_delta"], 10.0, places=1)
+        self.assertAlmostEqual(weeks[1]["rhr_delta"], -3.0, places=1)
+
+    # --- Test 3: partial week included ---
+    def test_single_row_in_incomplete_week_still_appears(self):
+        # Insert one row in week 2026-W01 and one in week 2026-W02 (only 1 day each)
+        self._insert_oura("r1", "2026-01-05", avg_hrv_rmssd=40.0)
+        self._insert_oura("r2", "2026-01-12", avg_hrv_rmssd=45.0)
+        result = health_query.hrv_trend(520)
+        weeks = result["weeks"]
+        print(f"[test_partial_week] weeks={weeks}")
+        # Both single-day weeks must appear
+        self.assertEqual(len(weeks), 2)
+        # The partial weeks report days=1 each
+        self.assertEqual(weeks[0]["days"], 1)
+        self.assertEqual(weeks[1]["days"], 1)
+
+    # --- Test 4: weeks_requested in output ---
+    def test_weeks_requested_matches_argument(self):
+        # 2026-01-05 is ~17 weeks before today (2026-05-01) — use 520 to safely include it
+        self._insert_oura("r1", "2026-01-05", avg_hrv_rmssd=40.0)
+        result = health_query.hrv_trend(520)
+        print(f"[test_weeks_requested] weeks_requested={result['weeks_requested']}")
+        self.assertEqual(result["weeks_requested"], 520)
+
+    def test_weeks_requested_small_value_preserved(self):
+        # Insert a row very close to today so it falls within a 2-week window
+        from datetime import date, timedelta
+        recent_day = (date.today() - timedelta(days=3)).isoformat()
+        self._insert_oura("r-recent", recent_day, avg_hrv_rmssd=55.0)
+        result = health_query.hrv_trend(2)
+        print(f"[test_weeks_requested_small] weeks_requested={result['weeks_requested']}")
+        self.assertEqual(result["weeks_requested"], 2)
+
+    # --- Test 5: no data exits with code 1 ---
+    def test_empty_table_calls_sys_exit_1(self):
+        # oura_daily is empty — hrv_trend must call _err() which calls sys.exit(1)
+        with self.assertRaises(SystemExit) as cm:
+            health_query.hrv_trend(4)
+        print(f"[test_no_data_exit] exit code={cm.exception.code}")
+        self.assertEqual(cm.exception.code, 1)
+
+    def test_rows_outside_window_treated_as_no_data(self):
+        # Insert a row that is definitely outside any reasonable window
+        # (2000-01-03 is > 100 weeks ago relative to 2026-05-01)
+        self._insert_oura("r-old", "2000-01-03", avg_hrv_rmssd=40.0)
+        with self.assertRaises(SystemExit) as cm:
+            health_query.hrv_trend(4)
+        print(f"[test_outside_window_exit] exit code={cm.exception.code}")
+        self.assertEqual(cm.exception.code, 1)
+
+    # --- Test 6: rhr_delta is None when resting_hr missing for a week ---
+    def test_rhr_delta_none_when_prior_week_has_no_resting_hr(self):
+        # Week 2026-W01: has HRV but NO resting_heart_rate
+        self._insert_oura("r1", "2026-01-05", avg_hrv_rmssd=40.0, resting_heart_rate=None)
+        # Week 2026-W02: has both HRV and resting_heart_rate
+        self._insert_oura("r2", "2026-01-12", avg_hrv_rmssd=50.0, resting_heart_rate=56)
+        result = health_query.hrv_trend(520)
+        weeks = result["weeks"]
+        print(f"[test_rhr_delta_none] weeks={weeks}")
+        self.assertEqual(len(weeks), 2)
+        # Week 1: avg_resting_hr must be None (no resting_hr data)
+        self.assertIsNone(weeks[0]["avg_resting_hr"])
+        # Week 2: rhr_delta must be None because prev week avg_resting_hr is None
+        self.assertIsNone(weeks[1]["rhr_delta"])
+        # But hrv_delta should still be computed correctly: 50.0 - 40.0 = 10.0
+        self.assertAlmostEqual(weeks[1]["hrv_delta"], 10.0, places=1)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
