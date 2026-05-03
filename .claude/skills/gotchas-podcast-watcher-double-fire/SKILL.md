@@ -92,25 +92,25 @@ This forces cloud Whisper first, then falls back to show_notes. The container ca
 
 ## Nightly Digest Sent Twice — Broken Dedup Guard
 
-**Trigger**: duplicate nightly digest, two Evernote notes same night, "Fri May 1" and "Sat May 2", engine runs twice, last_email_sent_at not persisted
+**Trigger**: duplicate nightly digest, two Evernote notes same night, engine runs twice, last_email_sent_at not persisted, concurrent engine runs, startup lock
 **Confidence**: high
 **Created**: 2026-05-02
-**Updated**: 2026-05-02
-**Version**: 1
+**Updated**: 2026-05-03
+**Version**: 2
 
 ### Symptom
 
-Two identical Evernote digest notes appear each night from the nightly `engine.py` run. The notes have **different date headers** (e.g. "Fri May 1" and "Sat May 2") because the first sends just before midnight and the second just after. Content is identical — same episodes, same "Whisper (standard) [date]" tags — confirming Whisper only ran once.
+Two Evernote digest notes appear each night with **slightly different episode summary text** (same episodes, different first-sentence phrasing) and different newsletter counts. The duplicate emails are confirmed via Gmail "All Mail" IMAP — both sent from the Gmail account ~39 minutes apart.
 
-Timing is consistent: ~11:20 PM first, ~12:20 AM second (approximately 1 hour apart).
+The email bodies are NOT identical — episode summaries differ slightly (LLM non-determinism) and the second email is missing the newsletter archive line (newsletters were already moved to Trash by the first run).
 
 ### Root Cause
 
-Two bugs combined:
+Two concurrent `engine.py` runs both start before either has written `processing_status.json`. Both read `status_before.get("last_email_sent_at") == None`, so the 4-hour dedup guard is blind to both. Both summarize the episodes (generating slightly different LLM output), send emails, then one of them crashes or exits before writing status (the final `processing_status.json` only reflects one run).
 
-**Bug 1 — engine.py runs twice.** Something triggers a second invocation of `engine.py` ~1 hour after the 11 PM cron. Root cause of the second trigger was not definitively identified but is systematic (happened every night for multiple days).
+The second run skips Whisper (audio already transcribed + deleted by first run) and re-summarizes from cached transcripts, producing slightly different text.
 
-**Bug 2 — dedup guard silently failed.** A `last_email_sent_at` timestamp was set on a `status` dict variable that didn't exist yet at that point in the code. Python raised a `NameError`, which was silently caught by the surrounding `except Exception` that wraps the `send_digest()` call. The email sent successfully, but the timestamp was never written. The second run saw `None` for `last_email_sent_at` and sent again.
+The trigger for the second concurrent run was not definitively identified despite exhaustive log analysis (no second crontab, no launchd, no container exec, no podcast-watcher active).
 
 ```python
 # BROKEN — status doesn't exist here yet; NameError silently swallowed
@@ -125,7 +125,7 @@ status = {"version": 1, "run_date": ..., ...}
 write_status(status)
 ```
 
-### Fix (engine.py)
+### Fix Part 1 (engine.py) — dedup guard
 
 Use a local variable and include it in the `status` dict at write time:
 
@@ -148,10 +148,34 @@ status = {
 write_status(status)
 ```
 
-The dedup check reads `status_before.get("last_email_sent_at")` from the file loaded at the start of the run. Window is 4 hours — enough to block a ~1 hour duplicate without blocking the next night's legitimate run.
+The dedup check reads `status_before.get("last_email_sent_at")` from the file loaded at the start of the run. Window is 4 hours.
+
+**Limitation:** the dedup guard only works when runs are SEQUENTIAL. Concurrent runs both read `last_email_sent_at == None` before either has written the file. Fix Part 2 prevents concurrent runs.
+
+### Fix Part 2 (engine.py) — startup lock (2026-05-03)
+
+Bail at startup if another instance is already running. Uses `mkdir` atomicity (same pattern as `oura-sync.py`):
+
+```python
+def main() -> None:
+    args = parser.parse_args()
+
+    _LOCK = Path("/tmp/podcast-engine.lock")
+    try:
+        _LOCK.mkdir(exist_ok=False)
+    except FileExistsError:
+        print("[engine] Already running — exiting to prevent duplicate digest.", file=sys.stderr)
+        sys.exit(0)
+    try:
+        _main_body(args)
+    finally:
+        _LOCK.rmdir()
+```
+
+The actual logic moved into `_main_body(args)`. Lock is always cleaned up via `finally`.
 
 ### Prevention
 
 - **Never assign to a dict variable inside a `try` block if that variable is created later.** The `except Exception` will swallow the `NameError` silently.
-- Any dedup state written to `processing_status.json` must go into the dict passed to `write_status()`, not assigned to a variable before that dict exists.
-- When adding dedup guards, verify the guard by checking `processing_status.json` manually after the first run to confirm `last_email_sent_at` is populated.
+- Any dedup state written to `processing_status.json` must go into the dict passed to `write_status()`.
+- The startup lock is the primary defence; the 4-hour email dedup guard is a secondary backstop.

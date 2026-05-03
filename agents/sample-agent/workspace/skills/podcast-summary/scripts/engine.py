@@ -513,6 +513,25 @@ Examples:
     args = parser.parse_args()
 
     # ------------------------------------------------------------------
+    # 0. Single-instance guard — bail immediately if already running.
+    #    Uses mkdir atomicity (same pattern as oura-sync.py).
+    #    Prevents duplicate emails when two runs start before either
+    #    has a chance to write processing_status.json.
+    # ------------------------------------------------------------------
+    _LOCK = Path("/tmp/podcast-engine.lock")
+    try:
+        _LOCK.mkdir(exist_ok=False)
+    except FileExistsError:
+        print("[engine] Already running — exiting to prevent duplicate digest.", file=sys.stderr)
+        sys.exit(0)
+    try:
+        _main_body(args)
+    finally:
+        _LOCK.rmdir()
+
+
+def _main_body(args) -> None:
+    # ------------------------------------------------------------------
     # 1. Load environment
     # ------------------------------------------------------------------
     env_path = get_env_path(args.agent)
