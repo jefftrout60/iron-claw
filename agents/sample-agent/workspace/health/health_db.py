@@ -51,7 +51,33 @@ def get_connection(db_path: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
+
+
+def _backup_db(conn: sqlite3.Connection) -> None:
+    """Create a backup before any schema migration fires.
+
+    Tries scripts/backup-health-db.sh first (handles rotation, naming).
+    Falls back to Python's conn.backup() API if the script path is not
+    reachable from this file's location (e.g. running inside the container
+    or in a test environment).
+    """
+    import subprocess
+
+    backup_script = Path(__file__).parent.parent.parent.parent / "scripts/backup-health-db.sh"
+    if backup_script.exists():
+        result = subprocess.run(
+            ["bash", str(backup_script)], capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"DB backup failed before migration: {result.stderr}")
+    else:
+        # Fallback: direct SQLite backup API
+        backup_path = Path(__file__).parent / "backups" / "health-premigration-v8.db"
+        backup_path.parent.mkdir(exist_ok=True)
+        backup_conn = sqlite3.connect(str(backup_path))
+        conn.backup(backup_conn)
+        backup_conn.close()
 
 
 def initialize_schema(conn: sqlite3.Connection) -> None:
@@ -67,6 +93,8 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
       4 → 5 : state_of_mind
       5 → 6 : lab_results.in_range_flag, health_knowledge.enrichment_status + topics_text, FTS rebuild
       6 → 7 : workouts.min_hr, workouts.intensity_met
+      7 → 8 : workouts.hr_recovery_1min + zone1_min–zone5_min; state_of_mind.notes;
+              user_events table; user_settings table (seeded with HR zone boundaries)
     """
     _version = conn.execute("PRAGMA user_version").fetchone()[0]
     # ---------- health_knowledge ----------------------------------------
@@ -497,6 +525,57 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         conn.execute("PRAGMA user_version = 7")
         conn.commit()
         _version = 7
+
+    # ---------- v8: zone tracking, user signals, hr recovery, SoM notes ----
+    if _version < 8:
+        _backup_db(conn)
+        # New columns on workouts (idempotent — guard against duplicate column)
+        for _col, _type in (
+            ("hr_recovery_1min", "INTEGER"),
+            ("zone1_min", "REAL"),
+            ("zone2_min", "REAL"),
+            ("zone3_min", "REAL"),
+            ("zone4_min", "REAL"),
+            ("zone5_min", "REAL"),
+        ):
+            try:
+                conn.execute(f"ALTER TABLE workouts ADD COLUMN {_col} {_type}")
+            except sqlite3.OperationalError as _e:
+                if "duplicate column name" not in str(_e):
+                    raise
+        # notes column on state_of_mind
+        try:
+            conn.execute("ALTER TABLE state_of_mind ADD COLUMN notes TEXT")
+        except sqlite3.OperationalError as _e:
+            if "duplicate column name" not in str(_e):
+                raise
+        # New tables
+        conn.execute("""CREATE TABLE IF NOT EXISTS user_events (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_type  TEXT NOT NULL,
+            description TEXT,
+            active_until TEXT,
+            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+        )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS user_settings (
+            key         TEXT PRIMARY KEY,
+            value       TEXT NOT NULL,
+            updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+        )""")
+        # Seed HR zone boundaries (INSERT OR IGNORE so re-running never overwrites user edits)
+        conn.executemany(
+            "INSERT OR IGNORE INTO user_settings(key, value) VALUES (?, ?)",
+            [
+                ("zone1_max_bpm", "104"),
+                ("zone2_min_bpm", "105"), ("zone2_max_bpm", "120"),
+                ("zone3_min_bpm", "121"), ("zone3_max_bpm", "133"),
+                ("zone4_min_bpm", "134"), ("zone4_max_bpm", "144"),
+                ("zone5_min_bpm", "145"),
+            ],
+        )
+        conn.execute("PRAGMA user_version = 8")
+        conn.commit()
+        _version = 8
 
     assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION, (
         f"Schema migration incomplete: DB is at v{conn.execute('PRAGMA user_version').fetchone()[0]} "
